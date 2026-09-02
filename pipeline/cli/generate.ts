@@ -7,6 +7,7 @@
  */
 import { LocalFolderAssetStore } from '../adapters/LocalFolderAssetStore'
 import { TrellisSpaceMeshGenerator } from '../adapters/TrellisSpaceMeshGenerator'
+import { TrellisV1SpaceMeshGenerator } from '../adapters/TrellisV1SpaceMeshGenerator'
 import { TripoMeshGenerator } from '../adapters/TripoMeshGenerator'
 import { pendingProducts, type MeshGenerator } from '../core/types'
 
@@ -19,10 +20,13 @@ const siteId = args.get('site') ?? 'sklum'
 const count = Number(args.get('count') ?? Infinity)
 const root = args.get('out') ?? 'data/catalog'
 
+const generatorKind = process.env.GENERATOR ?? 'trellis'
 const generator: MeshGenerator =
-  (process.env.GENERATOR ?? 'trellis') === 'tripo'
+  generatorKind === 'tripo'
     ? new TripoMeshGenerator(process.env.TRIPO_API_KEY ?? '')
-    : new TrellisSpaceMeshGenerator(process.env.HF_TOKEN)
+    : generatorKind === 'trellis1'
+      ? new TrellisV1SpaceMeshGenerator(process.env.HF_TOKEN)
+      : new TrellisSpaceMeshGenerator(process.env.HF_TOKEN)
 
 const store = new LocalFolderAssetStore(root)
 const products = await store.readProducts(siteId)
