@@ -217,7 +217,7 @@ export class View3D {
     this.wallGroups.clear()
 
     for (const wall of this.project.floorPlan.walls) {
-      const group = buildWall(wall)
+      const group = buildWall(wall, this.project.wallFinish)
       this.wallGroups.set(wall, group)
       for (const opening of wall.openings) {
         const fixture = group.children.find(
@@ -229,7 +229,7 @@ export class View3D {
       this.roomGroup.add(group)
     }
     const polygon = this.project.floorPlan.floorPolygon()
-    if (polygon) this.roomGroup.add(buildFloor(polygon))
+    if (polygon) this.roomGroup.add(buildFloor(polygon, this.project.floorFinish))
     for (const furniture of this.project.furniture) {
       const group = buildFurniture(furniture, () => {
         this.dirty = true
@@ -273,7 +273,7 @@ export class View3D {
   private fadeWallsTowardCamera(): void {
     const center = this.roomCenter()
     for (const [wall, group] of this.wallGroups) {
-      const material = group.userData.wallMaterial as THREE.MeshStandardMaterial
+      const materials = group.userData.wallMaterials as THREE.MeshStandardMaterial[]
       const mid = new THREE.Vector3(
         (wall.start.x + wall.end.x) / 2,
         wall.height / 2,
@@ -287,12 +287,16 @@ export class View3D {
       const toCamera = new THREE.Vector3().subVectors(this.camera.position, mid).setY(0).normalize()
       const facing = outward.dot(toCamera)
       const faded = facing > 0.25
-      material.opacity = faded ? 0.13 : 1
-      material.depthWrite = !faded
+      for (const material of materials) {
+        material.opacity = faded ? 0.13 : 1
+        material.depthWrite = !faded
+      }
       if (faded) this.fadedWalls.add(wall)
       else this.fadedWalls.delete(wall)
       group.traverse((obj) => {
-        if (obj instanceof THREE.Mesh && obj.material === material) obj.castShadow = !faded
+        if (obj instanceof THREE.Mesh && materials.includes(obj.material as THREE.MeshStandardMaterial)) {
+          obj.castShadow = !faded
+        }
       })
     }
   }
@@ -715,7 +719,16 @@ function disposeGroup(group: THREE.Group): void {
     if (obj instanceof THREE.Mesh) {
       obj.geometry.dispose()
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material]
-      for (const material of materials) material.dispose()
+      for (const material of materials) {
+        // Las texturas clonadas por tramo se liberan; las cacheadas, nunca.
+        if (
+          material instanceof THREE.MeshStandardMaterial &&
+          material.map?.userData.isClone
+        ) {
+          material.map.dispose()
+        }
+        material.dispose()
+      }
     }
   })
 }

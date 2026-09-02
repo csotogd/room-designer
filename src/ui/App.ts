@@ -5,6 +5,7 @@ import { CommandStack } from '../app/commands/CommandStack'
 import { RemoveFurnitureCommand } from '../app/commands/RemoveFurnitureCommand'
 import { RotateFurnitureCommand } from '../app/commands/FurnitureCommands'
 import { RemoveOpeningCommand } from '../app/commands/PlanCommands'
+import { SetFloorFinishCommand, SetWallFinishCommand } from '../app/commands/FinishCommands'
 import { RemoveLightCommand } from '../app/commands/LightCommands'
 import { DefaultCatalog } from '../app/catalog/DefaultCatalog'
 import { deserializeProject, serializeProject } from '../app/serialization/ProjectSerializer'
@@ -50,8 +51,16 @@ export class App {
       onHint: (message) => this.hint(message),
     })
 
-    this.catalogPanel = new CatalogPanel(root, this.catalog, (placement) =>
-      this.startPlacement(placement),
+    this.catalogPanel = new CatalogPanel(
+      root,
+      this.catalog,
+      (placement) => this.startPlacement(placement),
+      {
+        wall: () => this.project.wallFinish,
+        floor: () => this.project.floorFinish,
+        setWall: (finish) => this.stack.execute(new SetWallFinishCommand(this.project, finish)),
+        setFloor: (finish) => this.stack.execute(new SetFloorFinishCommand(this.project, finish)),
+      },
     )
     this.cartPanel = new CartPanel(root, this.project)
     this.modal = new CreateRoomModal(root, (plan) => {

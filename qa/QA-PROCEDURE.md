@@ -43,6 +43,14 @@ Sobre la app servida con `npm run dev` (http://localhost:5173).
 15. Mover el slider "Hora" a la noche. **Esperado:** cielo oscuro, luz cálida
     de las lámparas saliendo por puerta y ventana.
 
+## QA-4b · Acabados
+
+15b. Pestaña "Acabados": elegir material de pared (Pintura/Rayas/Ladrillo) y
+     un color de la paleta o del selector libre. **Esperado:** las paredes
+     cambian al instante en 3D; lo mismo para el suelo (Madera/Baldosa/
+     Moqueta/Microcemento). Ctrl+Z revierte el último cambio y Guardar/Cargar
+     los conserva.
+
 ## QA-5 · Persistencia, plano y undo
 
 16. Guardar → recargar la página → "cargar el proyecto guardado" desde el

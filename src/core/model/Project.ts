@@ -1,6 +1,12 @@
 import { Point2D } from '../geometry/Point2D'
 import { Point3D } from '../geometry/Point3D'
 import { EventEmitter } from '../events/EventEmitter'
+import {
+  DEFAULT_FLOOR_FINISH,
+  DEFAULT_WALL_FINISH,
+  type FloorFinish,
+  type WallFinish,
+} from './Finishes'
 import { FloorPlan } from './FloorPlan'
 import { Furniture } from './Furniture'
 import { Sun } from './Sun'
@@ -22,11 +28,31 @@ export class Project {
   private readonly _furniture: Furniture[] = []
   private readonly _lights: LightPoint[] = []
   private _timeOfDay = 12
+  private _wallFinish: WallFinish = DEFAULT_WALL_FINISH
+  private _floorFinish: FloorFinish = DEFAULT_FLOOR_FINISH
 
   constructor(
     readonly floorPlan: FloorPlan,
     readonly ceilingHeight = 2.5,
   ) {}
+
+  get wallFinish(): WallFinish {
+    return this._wallFinish
+  }
+
+  get floorFinish(): FloorFinish {
+    return this._floorFinish
+  }
+
+  setWallFinish(finish: WallFinish): void {
+    this._wallFinish = finish
+    this.emitChanged('finish-changed')
+  }
+
+  setFloorFinish(finish: FloorFinish): void {
+    this._floorFinish = finish
+    this.emitChanged('finish-changed')
+  }
 
   get furniture(): readonly Furniture[] {
     return this._furniture

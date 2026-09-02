@@ -286,6 +286,71 @@ button {
   color: var(--ink-soft);
 }
 
+/* ── Acabados ───────────────────────────────────────────────────── */
+
+.finish-section {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.finish-section h4 {
+  font-size: 13px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 7px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.chip.active {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: #eef4fa;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.swatch-color {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #00000018;
+}
+
+.swatch-color.active {
+  outline: 3px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.swatches input[type='color'] {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
 /* ── Inspector flotante ─────────────────────────────────────────── */
 
 #inspector {

@@ -1,5 +1,6 @@
 import { Point2D } from '../../core/geometry/Point2D'
 import { Point3D } from '../../core/geometry/Point3D'
+import type { FloorFinish, WallFinish } from '../../core/model/Finishes'
 import { Door } from '../../core/model/Door'
 import { Window } from '../../core/model/Window'
 import { Wall } from '../../core/model/Wall'
@@ -16,7 +17,10 @@ import {
 import type { OpeningKind } from '../../core/model/Opening'
 import type { FurnitureCatalog } from '../catalog/FurnitureCatalog'
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
+
+/** Versiones anteriores que sabemos migrar al cargar. */
+const SUPPORTED_VERSIONS = [1, SCHEMA_VERSION]
 
 export class UnsupportedVersionError extends Error {
   constructor(version: unknown) {
@@ -66,6 +70,11 @@ interface LightDoc {
   temperatureK: number
 }
 
+interface FinishesDoc {
+  wall: { material: string; color: string }
+  floor: { material: string; color: string }
+}
+
 export interface ProjectDoc {
   version: number
   ceilingHeight: number
@@ -73,6 +82,8 @@ export interface ProjectDoc {
   walls: WallDoc[]
   furniture: FurnitureDoc[]
   lights: LightDoc[]
+  /** Desde la versión 2; los documentos v1 cargan con los acabados por defecto. */
+  finishes?: FinishesDoc
 }
 
 /** JSON no distingue -0 de 0: normalizamos para que el round-trip sea idéntico. */
@@ -113,11 +124,15 @@ export function serializeProject(project: Project): ProjectDoc {
       intensity: num(l.intensity),
       temperatureK: num(l.temperatureK),
     })),
+    finishes: {
+      wall: { material: project.wallFinish.material, color: project.wallFinish.color },
+      floor: { material: project.floorFinish.material, color: project.floorFinish.color },
+    },
   }
 }
 
 export function deserializeProject(doc: ProjectDoc, catalog: FurnitureCatalog): Project {
-  if (doc.version !== SCHEMA_VERSION) throw new UnsupportedVersionError(doc.version)
+  if (!SUPPORTED_VERSIONS.includes(doc.version)) throw new UnsupportedVersionError(doc.version)
 
   const plan = new FloorPlan()
   for (const wallDoc of doc.walls) {
@@ -152,6 +167,18 @@ export function deserializeProject(doc: ProjectDoc, catalog: FurnitureCatalog): 
   }
 
   for (const l of doc.lights) project.addLight(restoreLight(l))
+
+  // v1 no llevaba acabados: se cargan los valores por defecto.
+  if (doc.finishes) {
+    project.setWallFinish({
+      material: doc.finishes.wall.material as WallFinish['material'],
+      color: doc.finishes.wall.color,
+    })
+    project.setFloorFinish({
+      material: doc.finishes.floor.material as FloorFinish['material'],
+      color: doc.finishes.floor.color,
+    })
+  }
   return project
 }
 

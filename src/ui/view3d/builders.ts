@@ -5,9 +5,18 @@ import type { Opening } from '../../core/model/Opening'
 import type { Polygon } from '../../core/geometry/Polygon'
 import type { Wall } from '../../core/model/Wall'
 import type { CatalogItem } from '../../core/model/CatalogItem'
+import type { FloorFinish, WallFinish } from '../../core/model/Finishes'
 import { kelvinToRgb } from './color'
 import { modelFor } from './models'
-import { fabricTexture, plankTexture, woodTexture } from './textures'
+import {
+  brickTexture,
+  concreteTexture,
+  fabricTexture,
+  plankTexture,
+  stripeTexture,
+  tileTexture,
+  woodTexture,
+} from './textures'
 
 const WALL_COLOR = 0xf2eee4
 const GLASS_COLOR = 0xa8cbe8
@@ -64,18 +73,39 @@ function box(
  * carpinterías: hoja de puerta y marco+cristal de ventana como grupos
  * pinchables independientes.
  */
-export function buildWall(wall: Wall): THREE.Group {
+export function buildWall(wall: Wall, finish?: WallFinish): THREE.Group {
   const group = new THREE.Group()
-  const material = new THREE.MeshStandardMaterial({
-    color: WALL_COLOR,
-    roughness: 0.92,
-    transparent: true,
-  })
-  group.userData.wallMaterial = material
+  const wallMaterials: THREE.MeshStandardMaterial[] = []
+  group.userData.wallMaterials = wallMaterials
   const length = wall.length()
   const height = wall.height
   const direction = wall.direction()
   const angle = Math.atan2(direction.y, direction.x)
+
+  /** Material del acabado; con textura, la repetición se ajusta al tramo. */
+  const wallMaterial = (spanW: number, spanH: number): THREE.MeshStandardMaterial => {
+    let material: THREE.MeshStandardMaterial
+    if (!finish || finish.material === 'paint') {
+      material = new THREE.MeshStandardMaterial({
+        color: finish?.color ?? WALL_COLOR,
+        roughness: 0.92,
+        transparent: true,
+      })
+    } else {
+      const map = (finish.material === 'brick'
+        ? brickTexture(finish.color)
+        : stripeTexture(finish.color)
+      ).clone()
+      // Los clones se liberan al reconstruir la escena (las texturas cacheadas, no).
+      map.userData.isClone = true
+      map.needsUpdate = true
+      if (finish.material === 'brick') map.repeat.set(spanW / 1.6, spanH / 0.9)
+      else map.repeat.set(spanW / 1.2, 1)
+      material = new THREE.MeshStandardMaterial({ map, roughness: 0.92, transparent: true })
+    }
+    wallMaterials.push(material)
+    return material
+  }
 
   const solids = new THREE.Group()
   solids.userData.pick = { type: 'wall', wall } satisfies Pick
@@ -92,7 +122,7 @@ export function buildWall(wall: Wall): THREE.Group {
 
   const addSolid = (from: number, to: number, yBottom: number, yTop: number): void => {
     if (to - from <= 1e-4 || yTop - yBottom <= 1e-4) return
-    const mesh = box(to - from, yTop - yBottom, wall.thickness, material)
+    const mesh = box(to - from, yTop - yBottom, wall.thickness, wallMaterial(to - from, yTop - yBottom))
     place(mesh, from + (to - from) / 2, yBottom + (yTop - yBottom) / 2)
     solids.add(mesh)
   }
@@ -170,15 +200,29 @@ function buildOpeningFixture(
   return fixture
 }
 
-export function buildFloor(polygon: Polygon): THREE.Mesh {
+export function buildFloor(polygon: Polygon, finish?: FloorFinish): THREE.Mesh {
   const shape = new THREE.Shape(polygon.vertices.map((v) => new THREE.Vector2(v.x, v.y)))
   const geometry = new THREE.ShapeGeometry(shape)
   geometry.rotateX(Math.PI / 2)
-  const map = plankTexture()
-  map.repeat.set(0.55, 0.55)
+
+  const material = finish?.material ?? 'wood'
+  const color = finish?.color ?? '#d9c5a3'
+  const map =
+    material === 'tiles'
+      ? tileTexture(color)
+      : material === 'carpet'
+        ? fabricTexture(color)
+        : material === 'concrete'
+          ? concreteTexture(color)
+          : plankTexture(color)
+  map.repeat.set(
+    material === 'tiles' ? 0.5 : material === 'carpet' ? 0.9 : material === 'concrete' ? 0.35 : 0.55,
+    material === 'tiles' ? 0.5 : material === 'carpet' ? 0.9 : material === 'concrete' ? 0.35 : 0.55,
+  )
+  const roughness = material === 'tiles' ? 0.35 : material === 'carpet' ? 1 : 0.8
   const mesh = new THREE.Mesh(
     geometry,
-    new THREE.MeshStandardMaterial({ map, roughness: 0.8, side: THREE.DoubleSide }),
+    new THREE.MeshStandardMaterial({ map, roughness, side: THREE.DoubleSide }),
   )
   mesh.position.y = 0.001
   mesh.receiveShadow = true

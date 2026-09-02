@@ -31,6 +31,11 @@ Cada artículo es una entidad `Product` (core): id, nombre, descripción,
 precio, dimensiones y `assets` (foto y modelo GLB) — hoy locales, mañana
 URLs de S3/CDN servidas por el backend sin tocar el front.
 
+La pestaña **Acabados** permite elegir material y color de paredes
+(pintura, rayas, ladrillo) y suelo (madera, baldosa, moqueta,
+microcemento) con paletas y selector libre; los acabados forman parte del
+proyecto (undo + guardado, documento v2 con migración desde v1).
+
 **Producción:** el plan de migración a front + back con gRPC (Connect-ES),
 con los contratos ya definidos, está en [ARCHITECTURE.md](ARCHITECTURE.md) y
 [proto/roomdesigner/v1/roomdesigner.proto](proto/roomdesigner/v1/roomdesigner.proto).
