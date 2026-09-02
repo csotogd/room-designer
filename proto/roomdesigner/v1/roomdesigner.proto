@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package roomdesigner.v1;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catálogo: los artículos (medidas, precio, asset 3D) viven en el backend.
+// El front los consume a través del puerto FurnitureCatalog; el adaptador
+// GrpcCatalog implementa ese puerto llamando a este servicio.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service CatalogService {
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+}
+
+message ListItemsRequest {
+  // Paginación / filtros por categoría en el futuro.
+  string category = 1;
+}
+
+message ListItemsResponse {
+  repeated CatalogItem items = 1;
+}
+
+message CatalogItem {
+  string id = 1;
+  string name = 2;
+  double width_m = 3;
+  double depth_m = 4;
+  double height_m = 5;
+  bool is_surface = 6;
+  string color = 7;
+  double price_eur = 8;
+  // URL (CDN) del modelo GLB con texturas; el front lo carga con GLTFLoader.
+  string asset_url = 9;
+  // URL de la miniatura para la tarjeta del catálogo.
+  string thumbnail_url = 10;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proyectos: el documento serializado (ProjectDoc) es el contrato entre front
+// y back — el mismo JSON versionado que hoy va a localStorage. El puerto
+// ProjectRepository del front lo implementa GrpcProjectRepository.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service ProjectService {
+  rpc SaveProject(SaveProjectRequest) returns (SaveProjectResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+}
+
+message SaveProjectRequest {
+  string project_id = 1; // vacío = crear
+  ProjectDoc doc = 2;
+}
+
+message SaveProjectResponse {
+  string project_id = 1;
+  int64 revision = 2; // control optimista de concurrencia
+}
+
+message GetProjectRequest {
+  string project_id = 1;
+}
+
+message GetProjectResponse {
+  ProjectDoc doc = 1;
+  int64 revision = 2;
+}
+
+message ListProjectsRequest {}
+
+message ListProjectsResponse {
+  repeated ProjectSummary projects = 1;
+}
+
+message ProjectSummary {
+  string project_id = 1;
+  string name = 2;
+  double area_m2 = 3;
+  double cart_total_eur = 4;
+}
+
+// Espejo 1:1 del ProjectDoc del front (src/app/serialization).
+message ProjectDoc {
+  int32 version = 1;
+  double ceiling_height = 2;
+  double time_of_day = 3;
+  repeated WallDoc walls = 4;
+  repeated FurnitureDoc furniture = 5;
+  repeated LightDoc lights = 6;
+}
+
+message Vec2 {
+  double x = 1;
+  double y = 2;
+}
+
+message Vec3 {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+message WallDoc {
+  string id = 1;
+  Vec2 start = 2;
+  Vec2 end = 3;
+  double thickness = 4;
+  double height = 5;
+  repeated OpeningDoc openings = 6;
+}
+
+message OpeningDoc {
+  string id = 1;
+  string kind = 2; // "door" | "window"
+  double offset = 3;
+  double width = 4;
+  double height = 5;
+  double sill_height = 6;
+}
+
+message FurnitureDoc {
+  string id = 1;
+  string catalog_id = 2;
+  Vec3 position = 3;
+  double rotation_y = 4;
+  optional string supported_by_id = 5;
+}
+
+message LightDoc {
+  string id = 1;
+  string kind = 2; // "ceiling" | "wall" | "floor"
+  Vec3 position = 3;
+  bool on = 4;
+  double intensity = 5;
+  double temperature_k = 6;
+}
