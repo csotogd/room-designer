@@ -7,7 +7,9 @@
     "test": "vitest",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pipeline:ingest": "tsx pipeline/cli/ingest.ts",
+    "pipeline:generate": "tsx pipeline/cli/generate.ts"
   },
   "keywords": [],
   "author": "",
@@ -18,11 +20,13 @@
     "@types/node": "^26.4.1",
     "@types/three": "^0.185.4",
     "fast-check": "^4.9.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@gradio/client": "^2.5.1",
     "three": "^0.185.1"
   },
   "type": "module"

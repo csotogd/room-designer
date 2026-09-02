@@ -1,0 +1,76 @@
+import { expect } from 'vitest'
+import { mkdtempSync, readFileSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { feature, scenario } from './gherkin'
+import { extractJsonLdProduct } from '../../pipeline/adapters/jsonld'
+import { LocalFolderAssetStore } from '../../pipeline/adapters/LocalFolderAssetStore'
+import { pendingProducts, type ScrapedProduct } from '../../pipeline/core/types'
+
+const FIXTURE_HTML = `
+<html><head>
+<script type="application/ld+json">{"@type":"WebPage","name":"x"}</script>
+<script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "Silla de comedor Tento",
+  "image": ["https://cdn.example.com/tento.jpg"],
+  "offers": {"@type": "Offer", "price": "79.95", "priceCurrency": "EUR"},
+  "additionalProperty": [
+    {"@type": "QuantitativeValue", "name": "Alto", "value": "82,5", "unitCode": "cm"},
+    {"@type": "QuantitativeValue", "name": "Ancho", "value": "46,5", "unitCode": "cm"},
+    {"@type": "QuantitativeValue", "name": "Profundo", "value": "53", "unitCode": "cm"},
+    {"@type": "QuantitativeValue", "name": "Peso", "value": "5,2", "unitCode": "kg"}
+  ]
+}</script>
+</head><body></body></html>`
+
+function product(id: string, withModel = false): ScrapedProduct {
+  return {
+    id,
+    site: 'test',
+    sourceUrl: `https://example.com/${id}.html`,
+    name: id,
+    imageUrl: `https://cdn.example.com/${id}.jpg`,
+    extraDims: {},
+    imagePath: `test/images/${id}.jpg`,
+    ...(withModel ? { modelPath: `test/models/${id}.glb` } : {}),
+  }
+}
+
+feature('Catalog ingestion and mesh generation pipeline', () => {
+  scenario('A product page with JSON-LD yields name, image, price and dimensions', () => {
+    const p = extractJsonLdProduct(FIXTURE_HTML, 'https://example.com/silla-tento.html', 'sklum')
+    expect(p).not.toBeNull()
+    expect(p!.name).toBe('Silla de comedor Tento')
+    expect(p!.imageUrl).toBe('https://cdn.example.com/tento.jpg')
+    expect(p!.price).toBeCloseTo(79.95)
+    expect(p!.currency).toBe('EUR')
+    expect(p!.heightCm).toBeCloseTo(82.5)
+    expect(p!.widthCm).toBeCloseTo(46.5)
+    expect(p!.depthCm).toBeCloseTo(53)
+    expect(p!.extraDims.peso).toBeCloseTo(5.2)
+    expect(p!.id).toBe('silla-tento')
+  })
+
+  scenario('Scraped assets are laid out like a bucket', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bucket-'))
+    const store = new LocalFolderAssetStore(root)
+    const p = product('silla-x')
+    p.imagePath = await store.saveImage('sklum', p.id, new Uint8Array([1, 2, 3]))
+    await store.saveProducts('sklum', [p])
+
+    expect(p.imagePath).toBe(join('sklum', 'images', 'silla-x.jpg'))
+    expect(existsSync(join(root, 'sklum', 'images', 'silla-x.jpg'))).toBe(true)
+    const saved = JSON.parse(readFileSync(join(root, 'sklum', 'products.json'), 'utf8'))
+    expect(saved).toHaveLength(1)
+    expect(saved[0].name).toBe('silla-x')
+    expect(await store.readProducts('sklum')).toEqual(saved)
+  })
+
+  scenario('The generation queue only picks products without a model', () => {
+    const products = [product('a'), product('b', true), product('c')]
+    const queue = pendingProducts(products)
+    expect(queue.map((p) => p.id)).toEqual(['a', 'c'])
+  })
+})

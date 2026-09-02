@@ -4,3 +4,4 @@ dist/
 reports/
 *.log
 .DS_Store
+data/catalog/
