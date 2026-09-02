@@ -18,13 +18,18 @@ npx stryker run    # mutation testing
 ```
 
 **En la app:** el asistente tiene dos pasos — forma/medidas y **puertas y
-ventanas sobre el plano** — y después colocas desde el panel izquierdo
-(Muebles / Puertas y ventanas / Luces) haciendo clic en la escena: los
-muebles son modelos con textura (cama con edredón y almohadas, armario con
-puertas, sofá con cojines…) y **no pueden salir de la habitación**. Pincha
-cualquier objeto para seleccionarlo y arrástralo; R rota, Supr borra, Ctrl+Z
-deshace, Esc cancela/fija. Todo lo colocado suma en el **carrito** (🛒 en la
-barra superior) con precios y total. El botón *Plano* abre el plano 2D.
+ventanas sobre el plano** — y después colocas desde el **catálogo de
+productos** del panel izquierdo: 21 artículos con foto, nombre, precio y
+medidas (las fotos se renderizan de los propios modelos 3D; con bucket,
+`imageUrl`/`modelUrl` las sustituyen). Los muebles son modelos con textura
+y **no pueden salir de la habitación**. Pincha cualquier objeto para
+seleccionarlo y arrástralo; R rota, Supr borra, Ctrl+Z deshace, Esc
+cancela/fija. Todo lo colocado suma en el **carrito** (🛒 en la barra
+superior) con precios y total. El botón *Plano* abre el plano 2D.
+
+Cada artículo es una entidad `Product` (core): id, nombre, descripción,
+precio, dimensiones y `assets` (foto y modelo GLB) — hoy locales, mañana
+URLs de S3/CDN servidas por el backend sin tocar el front.
 
 **Producción:** el plan de migración a front + back con gRPC (Connect-ES),
 con los contratos ya definidos, está en [ARCHITECTURE.md](ARCHITECTURE.md) y

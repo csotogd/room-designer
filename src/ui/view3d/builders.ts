@@ -6,6 +6,7 @@ import type { Polygon } from '../../core/geometry/Polygon'
 import type { Wall } from '../../core/model/Wall'
 import type { CatalogItem } from '../../core/model/CatalogItem'
 import { kelvinToRgb } from './color'
+import { modelFor } from './models'
 import { fabricTexture, plankTexture, woodTexture } from './textures'
 
 const WALL_COLOR = 0xf2eee4
@@ -195,12 +196,12 @@ const fabric = (color: string): THREE.MeshStandardMaterial =>
  * Modelos procedurales detallados por artículo (con textura de madera/tejido).
  * Convención: el grupo está centrado; el suelo local es y = -altura/2.
  */
-function furnitureShape(item: CatalogItem): THREE.Group {
+export function furnitureShape(item: CatalogItem): THREE.Group {
   const group = new THREE.Group()
   const { width: W, depth: D, height: H } = item
   const floor = -H / 2
 
-  switch (item.id) {
+  switch (item.form) {
     case 'vase': {
       const body = new THREE.Mesh(
         new THREE.CylinderGeometry(W * 0.28, W * 0.45, H * 0.85, 18),
@@ -380,6 +381,70 @@ function furnitureShape(item: CatalogItem): THREE.Group {
       group.add(mat)
       break
     }
+    case 'stool': {
+      const seat = new THREE.Mesh(
+        new THREE.CylinderGeometry(W * 0.45, W * 0.4, 0.05, 16),
+        wood(item.color),
+      )
+      seat.position.y = H / 2 - 0.025
+      seat.castShadow = true
+      group.add(seat)
+      for (let i = 0; i < 3; i++) {
+        const angle = (i * Math.PI * 2) / 3
+        const leg = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.02, 0.025, H - 0.05, 8),
+          wood(shadeHex(item.color, 0.8)),
+        )
+        leg.position.set(Math.cos(angle) * W * 0.3, floor + (H - 0.05) / 2, Math.sin(angle) * W * 0.3)
+        leg.castShadow = true
+        group.add(leg)
+      }
+      break
+    }
+    case 'bench': {
+      const slab = box(W, 0.06, D, wood(item.color))
+      slab.position.y = H / 2 - 0.03
+      group.add(slab)
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+        const leg = box(0.05, H - 0.06, 0.05, wood(shadeHex(item.color, 0.8)))
+        leg.position.set(sx * (W / 2 - 0.08), floor + (H - 0.06) / 2, sz * (D / 2 - 0.06))
+        group.add(leg)
+      }
+      break
+    }
+    case 'pouf': {
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(W * 0.5, W * 0.46, H * 0.9, 20),
+        fabric(item.color),
+      )
+      body.position.y = floor + H * 0.45
+      body.castShadow = true
+      const top = new THREE.Mesh(
+        new THREE.CylinderGeometry(W * 0.48, W * 0.5, H * 0.12, 20),
+        fabric(shadeHex(item.color, 1.1)),
+      )
+      top.position.y = floor + H * 0.95
+      group.add(body, top)
+      break
+    }
+    case 'mirror': {
+      const frame = box(W, H * 0.96, 0.03, wood('#8a6a4f'))
+      frame.position.y = H * 0.02
+      const glass = box(W * 0.88, H * 0.86, 0.01, new THREE.MeshStandardMaterial({
+        color: 0xcfe0e8,
+        metalness: 0.9,
+        roughness: 0.08,
+      }))
+      glass.position.set(0, H * 0.02, 0.02)
+      frame.rotation.x = glass.rotation.x = -0.06
+      group.add(frame, glass)
+      for (const side of [-1, 1]) {
+        const foot = box(0.04, 0.02, D * 2.2, new THREE.MeshStandardMaterial({ color: 0x555555 }))
+        foot.position.set(side * W * 0.35, floor + 0.01, 0)
+        group.add(foot)
+      }
+      break
+    }
     default: {
       const body = box(W, H, D, wood(item.color))
       group.add(body)
@@ -397,9 +462,13 @@ function shadeHex(hex: string, factor: number): string {
   return `#${channel((n >> 16) & 255)}${channel((n >> 8) & 255)}${channel(n & 255)}`
 }
 
-/** Mueble pinchable con las medidas reales del artículo. */
-export function buildFurniture(furniture: Furniture): THREE.Group {
-  const group = furnitureShape(furniture.item)
+/**
+ * Mueble pinchable con las medidas reales del artículo. Si el producto tiene
+ * modelo GLB, se usa (cargado en diferido); si no, su forma procedural.
+ */
+export function buildFurniture(furniture: Furniture, onModelLoaded?: () => void): THREE.Group {
+  const group =
+    (onModelLoaded && modelFor(furniture.item, onModelLoaded)) || furnitureShape(furniture.item)
   group.userData.pick = { type: 'furniture', furniture } satisfies Pick
   group.position.set(
     furniture.position.x,

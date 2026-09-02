@@ -98,7 +98,16 @@ export class App {
 
     if (this.selection.type === 'furniture') {
       const furniture = this.selection.furniture
-      panel.append(this.objName(furniture.item.name))
+      const name = this.objName(furniture.item.name)
+      name.title = furniture.item.description
+      const price = this.root.createElement('span')
+      price.textContent = furniture.item.price.toLocaleString('es-ES', {
+        style: 'currency',
+        currency: 'EUR',
+        maximumFractionDigits: 0,
+      })
+      price.style.color = '#767676'
+      panel.append(name, price)
       panel.append(
         this.pill('⟳ Rotar (R)', () => this.rotateSelection(furniture)),
         this.pill('Eliminar', () => {

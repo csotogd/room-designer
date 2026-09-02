@@ -62,7 +62,12 @@ gRPC "puro" no funciona desde un navegador (HTTP/2 frames). Dos opciones:
    id, owner, doc JSONB, revision) y `CatalogService` sobre una tabla o YAML.
 3. `GrpcProjectRepository` y `GrpcCatalog` en `src/app/` (≈50 líneas cada uno)
    e inyección por configuración (local vs producción).
-4. Assets: subir GLBs al CDN, rellenar `asset_url`; añadir `GltfModelCache`
-   en `ui/view3d` con carga perezosa + placeholder procedural.
+4. Assets: la entidad `Product` (core) ya lleva `assets.imageUrl` y
+   `assets.modelUrl`. El renderer ya resuelve ambos con fallback local:
+   `ui/view3d/models.ts` carga el GLB en diferido (caché + placeholder
+   procedural mientras llega) y `ui/view3d/thumbnails.ts` usa la foto del
+   bucket si existe o renderiza una miniatura del modelo. Migrar = subir
+   GLBs y fotos a S3/CDN y rellenar las URLs en el catálogo del backend;
+   el front no cambia.
 5. Autenticación (token en interceptor de Connect) y `ListProjects` para el
    "mis diseños" del usuario.

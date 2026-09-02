@@ -1,17 +1,7 @@
+import { Product } from './Product'
+
 /**
- * Descripción de un producto del catálogo. `isSurface` indica si admite
- * objetos apoyados encima (mesa sí, alfombra no).
+ * Alias histórico: el resto del dominio habla de "artículo de catálogo";
+ * la entidad real es Product (nombre, descripción, precio y assets).
  */
-export interface CatalogItem {
-  readonly id: string
-  readonly name: string
-  /** Dimensiones en metros. */
-  readonly width: number
-  readonly depth: number
-  readonly height: number
-  readonly isSurface: boolean
-  /** Color base para el renderizado. */
-  readonly color: string
-  /** Precio en euros para el carrito. */
-  readonly price: number
-}
+export type CatalogItem = Product

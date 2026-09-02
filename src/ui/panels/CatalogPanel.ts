@@ -1,27 +1,22 @@
 import type { FurnitureCatalog } from '../../app/catalog/FurnitureCatalog'
+import { productImage } from '../view3d/thumbnails'
 import type { Placement } from '../view3d/View3D'
 
-const FURNITURE_EMOJI: Record<string, string> = {
-  sofa: '🛋️',
-  chair: '🪑',
-  bed: '🛏️',
-  wardrobe: '🚪',
-  shelf: '📚',
-  vase: '🏺',
-  plant: '🪴',
-  tv: '📺',
-}
+const euros = (value: number): string =>
+  value.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 
-interface Entry {
+interface SimpleEntry {
   placement: Placement
   name: string
-  swatch: { emoji?: string; color: string }
-  dims: string
+  emoji: string
+  detail: string
 }
 
 /**
- * Panel lateral de catálogo: pestañas + tarjetas. Elegir una tarjeta entra
- * en modo colocación (fantasma en la escena); colocar o Esc lo desactiva.
+ * Panel lateral de catálogo: los muebles como tarjetas de producto con foto,
+ * nombre y precio (scroll largo, como en un configurador comercial); puertas,
+ * ventanas y luces como tarjetas simples. Elegir una tarjeta entra en modo
+ * colocación; colocar o Esc lo desactiva.
  */
 export class CatalogPanel {
   private activeTab = 'furniture'
@@ -49,80 +44,89 @@ export class CatalogPanel {
     this.activeCard = null
   }
 
-  private entries(): Entry[] {
-    if (this.activeTab === 'furniture') {
-      return this.catalog.items().map((item) => ({
-        placement: { type: 'furniture', item },
-        name: item.name,
-        swatch: { emoji: FURNITURE_EMOJI[item.id], color: item.color + '33' },
-        dims: `${Math.round(item.width * 100)}×${Math.round(item.depth * 100)} cm`,
-      }))
-    }
-    if (this.activeTab === 'openings') {
-      return [
-        {
-          placement: { type: 'opening', kind: 'door' },
-          name: 'Puerta',
-          swatch: { emoji: '🚪', color: '#b0896833' },
-          dims: '90×200 cm',
-        },
-        {
-          placement: { type: 'opening', kind: 'window' },
-          name: 'Ventana',
-          swatch: { emoji: '🪟', color: '#5a8bb033' },
-          dims: '120×110 cm',
-        },
-      ]
-    }
-    return [
-      {
-        placement: { type: 'light', kind: 'ceiling' },
-        name: 'Plafón de techo',
-        swatch: { emoji: '💡', color: '#ffdb0033' },
-        dims: 'en el techo',
-      },
-      {
-        placement: { type: 'light', kind: 'wall' },
-        name: 'Aplique',
-        swatch: { emoji: '🔆', color: '#ffdb0033' },
-        dims: 'en la pared',
-      },
-      {
-        placement: { type: 'light', kind: 'floor' },
-        name: 'Lámpara de pie',
-        swatch: { emoji: '🕯️', color: '#ffdb0033' },
-        dims: 'alto 150 cm',
-      },
-    ]
-  }
-
   private renderCards(): void {
     const container = this.root.querySelector<HTMLElement>('#catalog-cards')!
     container.innerHTML = ''
     this.activeCard = null
-    for (const entry of this.entries()) {
+    if (this.activeTab === 'furniture') this.renderProductCards(container)
+    else this.renderSimpleCards(container)
+  }
+
+  // ── Tarjetas de producto (muebles) ───────────────────────────────────────
+
+  private renderProductCards(container: HTMLElement): void {
+    for (const product of this.catalog.items()) {
+      // div y no button: la caja anónima interna de <button> ignora la altura
+      // de la imagen al calcular el tamaño intrínseco de la fila del grid.
+      const card = this.root.createElement('div')
+      card.className = 'card product'
+      card.setAttribute('role', 'button')
+      card.tabIndex = 0
+      card.title = product.description
+
+      const photo = this.root.createElement('img')
+      photo.className = 'photo'
+      photo.alt = product.name
+      photo.loading = 'lazy'
+      photo.src = productImage(product)
+
+      const name = this.root.createElement('div')
+      name.className = 'name'
+      name.textContent = product.name
+      const price = this.root.createElement('div')
+      price.className = 'price'
+      price.textContent = euros(product.price)
+      const dims = this.root.createElement('div')
+      dims.className = 'dims'
+      dims.textContent = `${Math.round(product.width * 100)} × ${Math.round(product.depth * 100)} cm`
+
+      card.append(photo, name, price, dims)
+      card.addEventListener('click', () =>
+        this.activate(card, { type: 'furniture', item: product }),
+      )
+      container.append(card)
+    }
+  }
+
+  // ── Tarjetas simples (aperturas y luces) ─────────────────────────────────
+
+  private simpleEntries(): SimpleEntry[] {
+    if (this.activeTab === 'openings') {
+      return [
+        { placement: { type: 'opening', kind: 'door' }, name: 'Puerta', emoji: '🚪', detail: '90×200 cm' },
+        { placement: { type: 'opening', kind: 'window' }, name: 'Ventana', emoji: '🪟', detail: '120×110 cm' },
+      ]
+    }
+    return [
+      { placement: { type: 'light', kind: 'ceiling' }, name: 'Plafón de techo', emoji: '💡', detail: '59 €' },
+      { placement: { type: 'light', kind: 'wall' }, name: 'Aplique', emoji: '🔆', detail: '39 €' },
+      { placement: { type: 'light', kind: 'floor' }, name: 'Lámpara de pie', emoji: '🕯️', detail: '79 €' },
+    ]
+  }
+
+  private renderSimpleCards(container: HTMLElement): void {
+    for (const entry of this.simpleEntries()) {
       const card = this.root.createElement('button')
       card.className = 'card'
-
       const swatch = this.root.createElement('div')
       swatch.className = 'swatch'
-      swatch.style.background = entry.swatch.color
-      swatch.textContent = entry.swatch.emoji ?? ''
+      swatch.textContent = entry.emoji
       const name = this.root.createElement('div')
       name.className = 'name'
       name.textContent = entry.name
-      const dims = this.root.createElement('div')
-      dims.className = 'dims'
-      dims.textContent = entry.dims
-      card.append(swatch, name, dims)
-
-      card.addEventListener('click', () => {
-        this.clearActive()
-        card.classList.add('active')
-        this.activeCard = card
-        this.onPick(entry.placement)
-      })
+      const detail = this.root.createElement('div')
+      detail.className = 'dims'
+      detail.textContent = entry.detail
+      card.append(swatch, name, detail)
+      card.addEventListener('click', () => this.activate(card, entry.placement))
       container.append(card)
     }
+  }
+
+  private activate(card: HTMLElement, placement: Placement): void {
+    this.clearActive()
+    card.classList.add('active')
+    this.activeCard = card
+    this.onPick(placement)
   }
 }

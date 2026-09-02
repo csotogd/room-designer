@@ -231,7 +231,9 @@ export class View3D {
     const polygon = this.project.floorPlan.floorPolygon()
     if (polygon) this.roomGroup.add(buildFloor(polygon))
     for (const furniture of this.project.furniture) {
-      const group = buildFurniture(furniture)
+      const group = buildFurniture(furniture, () => {
+        this.dirty = true
+      })
       this.furnitureGroups.set(furniture, group)
       this.roomGroup.add(group)
     }

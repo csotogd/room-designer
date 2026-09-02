@@ -247,7 +247,19 @@ describe('Catálogo: invariantes', () => {
       expect(i.price).toBeGreaterThan(0)
     }
     const surfaces = items.filter((i) => i.isSurface).map((i) => i.id).sort()
-    expect(surfaces).toEqual(['bed', 'shelf', 'sideboard', 'table', 'wardrobe'])
+    expect(surfaces).toEqual([
+      'bed',
+      'bench',
+      'bookcase',
+      'coffee-table',
+      'desk',
+      'dresser',
+      'nightstand',
+      'shelf',
+      'sideboard',
+      'table',
+      'wardrobe',
+    ])
   })
 
   test('get devuelve el mismo objeto listado y falla con id desconocido', () => {
