@@ -20,22 +20,32 @@ export class JsonLdCatalogScraper implements CatalogScraper {
     const products: ScrapedProduct[] = []
     const visited = new Set<string>()
 
+    // Colas de enlaces por categoría: el límite se reparte en turnos (una de
+    // cada categoría por ronda) para que el catálogo salga variado en vez de
+    // agotarse en la primera categoría.
+    const queues: string[][] = []
     for (const categoryUrl of this.config.categoryUrls) {
-      if (products.length >= limit) break
-      let links: string[]
       try {
-        links = extractProductLinks(
-          await this.fetchText(categoryUrl),
-          this.config.productLinkPattern,
-          this.config.origin,
+        queues.push(
+          extractProductLinks(
+            await this.fetchText(categoryUrl),
+            this.config.productLinkPattern,
+            this.config.origin,
+          ),
         )
       } catch (error) {
         console.warn(`[scraper] categoría inaccesible ${categoryUrl}: ${String(error)}`)
-        continue
       }
+    }
 
-      for (const url of links) {
+    let remaining = true
+    while (products.length < limit && remaining) {
+      remaining = false
+      for (const queue of queues) {
         if (products.length >= limit) break
+        const url = queue.shift()
+        if (!url) continue
+        remaining = true
         if (visited.has(url)) continue
         visited.add(url)
         try {

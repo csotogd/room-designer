@@ -5,13 +5,16 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest",
-    "dev": "vite",
+    "dev": "vite --port ${PORT:-5173}",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "pipeline:ingest": "tsx pipeline/cli/ingest.ts",
     "pipeline:generate": "tsx pipeline/cli/generate.ts",
     "pipeline:link": "tsx pipeline/cli/link.ts",
-    "pipeline:judge": "tsx pipeline/cli/judge.ts"
+    "pipeline:judge": "tsx pipeline/cli/judge.ts",
+    "search:serve": "tsx services/search/server.ts",
+    "search:sync": "tsx pipeline/cli/searchSync.ts",
+    "search:eval": "tsx services/search/eval/run.ts"
   },
   "keywords": [],
   "author": "",

@@ -60,5 +60,13 @@ for (const product of products) {
   }
 }
 
-await store.saveProducts(siteId, products)
-console.log(`\n${products.length} productos → ${store.absolute(`${siteId}/products.json`)}`)
+// Ingesta aditiva: lo materializado en pasadas anteriores (imágenes y modelos
+// ya generados) se conserva aunque esta pasada no haya visitado ese producto.
+const scrapedIds = new Set(products.map((p) => p.id))
+const kept = [...previous.values()].filter((p) => !scrapedIds.has(p.id))
+const all = [...products, ...kept]
+
+await store.saveProducts(siteId, all)
+console.log(
+  `\n${products.length} escaneados + ${kept.length} conservados de antes = ${all.length} productos → ${store.absolute(`${siteId}/products.json`)}`,
+)

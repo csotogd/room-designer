@@ -80,6 +80,13 @@ export function extractJsonLdProduct(
       if (alias && product[alias] === undefined) product[alias] = value
       else product.extraDims[rawName] = value
     }
+
+    // Lámparas y mesas redondas publican diámetro en vez de ancho/fondo.
+    const diameter = product.extraDims['diámetro'] ?? product.extraDims['diametro']
+    if (diameter !== undefined) {
+      product.widthCm ??= diameter
+      product.depthCm ??= diameter
+    }
     return product
   }
   return null

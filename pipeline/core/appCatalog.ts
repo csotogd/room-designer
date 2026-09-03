@@ -14,7 +14,7 @@ export interface AppCatalogEntry {
   form: 'box'
   /** Sitio web de procedencia; el menú de muebles solo enseña productos con origen. */
   origin: string
-  assets: { imageUrl?: string; modelUrl?: string }
+  assets: { imageUrl?: string; packshotUrl?: string; modelUrl?: string }
 }
 
 const SURFACE_HINTS = /mesa|aparador|escritorio|consola|estanter|c[oó]moda|banco|mesita/i
@@ -46,6 +46,7 @@ export function toAppCatalogEntry(
     origin: product.site,
     assets: {
       imageUrl: url(product.imagePath),
+      ...(product.generationImagePath ? { packshotUrl: url(product.generationImagePath) } : {}),
       ...(product.modelPath ? { modelUrl: url(product.modelPath) } : {}),
     },
   }
