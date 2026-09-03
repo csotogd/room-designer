@@ -6,7 +6,12 @@ import { RemoveFurnitureCommand } from '../app/commands/RemoveFurnitureCommand'
 import { RotateFurnitureCommand } from '../app/commands/FurnitureCommands'
 import { RemoveOpeningCommand } from '../app/commands/PlanCommands'
 import { SetFloorFinishCommand, SetWallFinishCommand } from '../app/commands/FinishCommands'
-import { RemoveLightCommand } from '../app/commands/LightCommands'
+import {
+  RemoveLightCommand,
+  SetLightIntensityCommand,
+  SetLightTemperatureCommand,
+  ToggleLightCommand,
+} from '../app/commands/LightCommands'
 import { DefaultCatalog } from '../app/catalog/DefaultCatalog'
 import type { FurnitureCatalog } from '../app/catalog/FurnitureCatalog'
 import { deserializeProject, serializeProject } from '../app/serialization/ProjectSerializer'
@@ -156,16 +161,32 @@ export class App {
     const onInput = this.root.createElement('input')
     onInput.type = 'checkbox'
     onInput.checked = light.on
-    onInput.addEventListener('change', () => this.project.toggleLight(light))
+    onInput.addEventListener('change', () =>
+      this.stack.execute(new ToggleLightCommand(this.project, light)),
+    )
     onLabel.append(onInput, 'Encendida')
 
+    // Los sliders previsualizan en vivo (mutación directa) y al soltar
+    // vuelven al valor inicial y ejecutan UN comando: un gesto = un undo.
+    let intensityBefore = light.intensity
     const intensityLabel = this.root.createElement('label')
-    intensityLabel.append('Intensidad', this.slider(0, 1, 0.05, light.intensity, (v) =>
-      this.project.updateLight(light, (l) => l.setIntensity(v)),
+    intensityLabel.append('Intensidad', this.slider(0, 1, 0.05, light.intensity,
+      (v) => this.project.updateLight(light, (l) => l.setIntensity(v)),
+      (v) => {
+        this.project.updateLight(light, (l) => l.setIntensity(intensityBefore))
+        this.stack.execute(new SetLightIntensityCommand(this.project, light, v))
+        intensityBefore = v
+      },
     ))
+    let temperatureBefore = light.temperatureK
     const temperatureLabel = this.root.createElement('label')
-    temperatureLabel.append('Color', this.slider(2000, 6500, 100, light.temperatureK, (v) =>
-      this.project.updateLight(light, (l) => l.setTemperature(v)),
+    temperatureLabel.append('Color', this.slider(2000, 6500, 100, light.temperatureK,
+      (v) => this.project.updateLight(light, (l) => l.setTemperature(v)),
+      (v) => {
+        this.project.updateLight(light, (l) => l.setTemperature(temperatureBefore))
+        this.stack.execute(new SetLightTemperatureCommand(this.project, light, v))
+        temperatureBefore = v
+      },
     ))
 
     panel.append(
@@ -315,16 +336,19 @@ export class App {
   }
 
   private toolContext(): ToolContext {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const app = this
     return {
-      project: this.project,
+      // Getter, no valor: tras "Cargar"/"Nueva habitación" las herramientas
+      // ya construidas deben editar el proyecto vivo, no el descartado.
+      get project() {
+        return app.project
+      },
       stack: this.stack,
       catalog: this.catalog,
-      catalogItemId: () => 'sofa',
-      lightKind: () => 'ceiling',
       selection: () => null,
       select: () => {},
       hint: (m) => this.hint(m),
-      requestDraw: () => this.view2d?.draw(),
     }
   }
 
@@ -356,6 +380,9 @@ export class App {
     this.unsubscribe()
     this.project = project
     this.unsubscribe = this.subscribeProject()
+    // El historial pertenece al proyecto anterior: deshacer aquí mutaría un
+    // agregado descartado sin efecto visible.
+    this.stack.clear()
     this.view3dSelect(null)
     this.view3d.setProject(project)
     this.view2d?.setProject(project)
@@ -421,6 +448,7 @@ export class App {
     step: number,
     value: number,
     onInput: (v: number) => void,
+    onCommit?: (v: number) => void,
   ): HTMLInputElement {
     const input = this.root.createElement('input')
     input.type = 'range'
@@ -429,6 +457,7 @@ export class App {
     input.step = String(step)
     input.value = String(value)
     input.addEventListener('input', () => onInput(Number(input.value)))
+    if (onCommit) input.addEventListener('change', () => onCommit(Number(input.value)))
     return input
   }
 

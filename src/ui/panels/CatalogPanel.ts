@@ -250,6 +250,13 @@ export class CatalogPanel {
       card.addEventListener('click', () =>
         this.activate(card, { type: 'furniture', item: product }),
       )
+      // La tarjeta es un div con role=button: sin esto, Enter/Espacio no colocan.
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          this.activate(card, { type: 'furniture', item: product })
+        }
+      })
       container.append(card)
     }
   }

@@ -13,10 +13,6 @@ export function slideOffset(wall: Wall, opening: Opening, worldPoint: Point2D): 
   return Math.min(Math.max(along - opening.width / 2, 0), max)
 }
 
-export function canDropOpening(wall: Wall, opening: Opening, offset: number): boolean {
-  return wall.canPlaceOpening(opening, offset)
-}
-
 /** Suelta la apertura en `offset` si es válido; si no, la deja donde estaba. */
 export function tryDropOpening(
   project: Project,

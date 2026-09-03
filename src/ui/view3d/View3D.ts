@@ -955,6 +955,9 @@ function sameSelectable(a: Selectable | null, b: Selectable | null): boolean {
 function disposeGroup(group: THREE.Object3D): void {
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
+      // Los clones de GLB comparten geometría y materiales con el prototipo
+      // cacheado (models.ts): liberarlos rompería las demás instancias.
+      if (obj.userData.sharedAsset) return
       obj.geometry.dispose()
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material]
       for (const material of materials) {

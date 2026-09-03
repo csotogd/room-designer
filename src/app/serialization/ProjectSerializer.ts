@@ -135,15 +135,17 @@ export function deserializeProject(doc: ProjectDoc, catalog: FurnitureCatalog): 
   if (!SUPPORTED_VERSIONS.includes(doc.version)) throw new UnsupportedVersionError(doc.version)
 
   const plan = new FloorPlan()
-  for (const wallDoc of doc.walls) {
-    const wall = new Wall(
-      new Point2D(wallDoc.start.x, wallDoc.start.y),
-      new Point2D(wallDoc.end.x, wallDoc.end.y),
-      wallDoc.thickness,
-      wallDoc.height,
-      wallDoc.id,
-    )
-    for (const o of wallDoc.openings) wall.addOpening(restoreOpening(o))
+  for (const wallDoc of doc.walls ?? []) {
+    // Una pared degenerada (inicio = fin, por un doc editado a mano o
+    // corrupto) rompería el primer normalize() y con él todo el canvas.
+    const start = new Point2D(wallDoc.start.x, wallDoc.start.y)
+    const end = new Point2D(wallDoc.end.x, wallDoc.end.y)
+    if (start.distanceTo(end) < 1e-6) {
+      console.warn(`Pared degenerada descartada al cargar: ${wallDoc.id}`)
+      continue
+    }
+    const wall = new Wall(start, end, wallDoc.thickness, wallDoc.height, wallDoc.id)
+    for (const o of wallDoc.openings ?? []) wall.addOpening(restoreOpening(o))
     plan.addWall(wall)
   }
 
@@ -151,9 +153,18 @@ export function deserializeProject(doc: ProjectDoc, catalog: FurnitureCatalog): 
   project.setTimeOfDay(doc.timeOfDay)
 
   const byId = new Map<string, Furniture>()
-  for (const f of doc.furniture) {
+  for (const f of doc.furniture ?? []) {
+    // Un producto retirado del catálogo no puede costarle a quien carga el
+    // proyecto entero: se omite ese mueble y el resto sobrevive.
+    let item
+    try {
+      item = catalog.get(f.catalogId)
+    } catch {
+      console.warn(`Producto ya no disponible en el catálogo, omitido: ${f.catalogId}`)
+      continue
+    }
     const furniture = new Furniture(
-      catalog.get(f.catalogId),
+      item,
       new Point3D(f.position.x, f.position.y, f.position.z),
       f.rotationY,
       undefined,
@@ -162,11 +173,16 @@ export function deserializeProject(doc: ProjectDoc, catalog: FurnitureCatalog): 
     byId.set(f.id, furniture)
     project.addFurniture(furniture)
   }
-  for (const f of doc.furniture) {
-    if (f.supportedById) byId.get(f.id)!.supportedBy = byId.get(f.supportedById)
+  for (const f of doc.furniture ?? []) {
+    const furniture = byId.get(f.id)
+    if (!furniture || !f.supportedById) continue
+    const support = byId.get(f.supportedById)
+    if (support) furniture.supportedBy = support
+    // Soporte desaparecido: el mueble baja al suelo en vez de flotar.
+    else furniture.position = new Point3D(furniture.position.x, 0, furniture.position.z)
   }
 
-  for (const l of doc.lights) project.addLight(restoreLight(l))
+  for (const l of doc.lights ?? []) project.addLight(restoreLight(l))
 
   // v1 no llevaba acabados: se cargan los valores por defecto.
   if (doc.finishes) {

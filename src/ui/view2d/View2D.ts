@@ -224,11 +224,17 @@ export class View2D {
       if (e.button === 1 || e.button === 2) {
         this.panning = true
         this.lastPointer = [e.clientX, e.clientY]
+        // Con captura: soltar fuera del canvas también termina el paneo
+        // (sin ella, `panning` se quedaba pegado para siempre).
+        this.canvas.setPointerCapture(e.pointerId)
         return
       }
       this.canvas.setPointerCapture(e.pointerId)
       this.tool?.onDown(this.toWorld(e.clientX, e.clientY), e)
       this.draw()
+    })
+    this.canvas.addEventListener('pointercancel', () => {
+      this.panning = false
     })
     this.canvas.addEventListener('pointermove', (e) => {
       if (this.panning) {
@@ -253,12 +259,17 @@ export class View2D {
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault()
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
+      // Sin clamp, escala→0 hace que el paso de la rejilla tienda a 0 y el
+      // bucle de dibujo se vuelva prácticamente infinito (cuelga la pestaña).
+      const next = Math.min(500, Math.max(5, this.scale * factor))
+      if (next === this.scale) return
+      const applied = next / this.scale
       const rect = this.canvas.getBoundingClientRect()
       const px = e.clientX - rect.left
       const py = e.clientY - rect.top
-      this.offsetX = px - (px - this.offsetX) * factor
-      this.offsetY = py - (py - this.offsetY) * factor
-      this.scale *= factor
+      this.offsetX = px - (px - this.offsetX) * applied
+      this.offsetY = py - (py - this.offsetY) * applied
+      this.scale = next
       this.draw()
     })
   }
