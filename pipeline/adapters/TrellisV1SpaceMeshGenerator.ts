@@ -37,10 +37,11 @@ export class TrellisV1SpaceMeshGenerator implements MeshGenerator {
     const processedImage = (preprocessed.data as unknown[])[0]
 
     const result = await withTimeout(
+      // Nota: el 3er parámetro del endpoint (is_multiimage) es un gr.State sin
+      // nombre: lo inyecta el servidor por sesión y no debe enviarse.
       client.predict('/generate_and_extract_glb', {
         image: processedImage,
         multiimages: [],
-        is_multiimage: false,
         seed: 42,
         ss_guidance_strength: 7.5,
         ss_sampling_steps: 12,

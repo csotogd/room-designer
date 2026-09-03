@@ -55,3 +55,5 @@ for (const product of queue) {
   }
 }
 console.log(`\n${ok}/${queue.length} generados. Bucket: ${store.absolute(siteId)}`)
+// Los clientes de gradio dejan conexiones abiertas que impedirían salir.
+process.exit(ok === queue.length ? 0 : 1)
