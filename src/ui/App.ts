@@ -203,6 +203,21 @@ export class App {
       this.project.setTimeOfDay(Number(slider.value))
       this.refreshTimeLabel()
     })
+
+    // Panel de catálogo: minimizar a un asa lateral y alternar ancho.
+    const catalog = this.el<HTMLElement>('#catalog')
+    const reopen = this.el<HTMLButtonElement>('#catalog-reopen')
+    this.el<HTMLButtonElement>('#catalog-collapse').addEventListener('click', () => {
+      catalog.classList.add('collapsed')
+      reopen.hidden = false
+    })
+    reopen.addEventListener('click', () => {
+      catalog.classList.remove('collapsed')
+      reopen.hidden = true
+    })
+    this.el<HTMLButtonElement>('#catalog-width').addEventListener('click', () => {
+      catalog.classList.toggle('wide')
+    })
   }
 
   private bindKeyboard(): void {

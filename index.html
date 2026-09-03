@@ -9,27 +9,58 @@
   <body>
     <div id="app">
       <header id="topbar">
-        <div class="brand">Room<span>Designer</span></div>
-        <div class="topbar-group">
-          <button id="undo" class="icon-btn" title="Deshacer (Ctrl+Z)">↩</button>
-          <button id="redo" class="icon-btn" title="Rehacer (Ctrl+Y)">↪</button>
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="0" y="0" width="32" height="32" rx="9" fill="#0058a3"/>
+            <path d="M16 6 L27 11.5 L27 13.5 L16 8 L5 13.5 L5 11.5 Z" fill="#ffdb00"/>
+            <path d="M8 14 L16 10 L24 14 L24 24 L8 24 Z" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M11.5 24 L11.5 19.5 Q11.5 18 13 18 L19 18 Q20.5 18 20.5 19.5 L20.5 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <div class="brand-word">Room<em>Designer</em><small>estudio de interiores</small></div>
         </div>
-        <div class="topbar-group time-group">
-          <span class="sun-icon">☀️</span>
-          <input type="range" id="time-slider" min="0" max="24" step="0.25" value="12" title="Hora del día" />
+
+        <div class="topbar-group seg">
+          <button id="undo" class="icon-btn" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">
+            <svg viewBox="0 0 20 20"><path d="M8 5 L3.5 9 L8 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9 H12 Q16.5 9 16.5 13.5 Q16.5 15.5 15.5 16.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <button id="redo" class="icon-btn" title="Rehacer (Ctrl+Y)" aria-label="Rehacer">
+            <svg viewBox="0 0 20 20"><path d="M12 5 L16.5 9 L12 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 9 H8 Q3.5 9 3.5 13.5 Q3.5 15.5 4.5 16.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="topbar-group time-group" title="Hora del día">
+          <svg class="time-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="4" fill="#f6b73c"/><g stroke="#f6b73c" stroke-width="1.6" stroke-linecap="round"><line x1="10" y1="1.5" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18.5"/><line x1="1.5" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18.5" y2="10"/><line x1="4" y1="4" x2="5.7" y2="5.7"/><line x1="14.3" y1="14.3" x2="16" y2="16"/><line x1="4" y1="16" x2="5.7" y2="14.3"/><line x1="14.3" y1="5.7" x2="16" y2="4"/></g></svg>
+          <input type="range" id="time-slider" min="0" max="24" step="0.25" value="12" />
           <span id="time-value">12:00</span>
         </div>
+
         <div class="topbar-group right">
-          <button id="plan-toggle" class="ghost-btn">Plano</button>
+          <button id="plan-toggle" class="ghost-btn">Plano 2D</button>
+          <div class="seg-divider"></div>
           <button id="save" class="ghost-btn">Guardar</button>
           <button id="load" class="ghost-btn">Cargar</button>
-          <button id="cart-button" class="ghost-btn">🛒 <span id="cart-summary">0 · 0 €</span></button>
-          <button id="new-room" class="primary-btn">Nueva habitación</button>
+          <div class="seg-divider"></div>
+          <button id="cart-button" class="ghost-btn cart-btn" title="Carrito">
+            <svg viewBox="0 0 20 20"><path d="M3 4 H5 L7 13 H15.5 L17.5 7 H6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="16.4" r="1.4" fill="currentColor"/><circle cx="14.5" cy="16.4" r="1.4" fill="currentColor"/></svg>
+            <span id="cart-summary">0 · 0 €</span>
+          </button>
+          <button id="new-room" class="primary-btn">+ Nueva habitación</button>
         </div>
       </header>
 
       <main id="stage">
         <aside id="catalog">
+          <div id="catalog-header">
+            <span class="catalog-title">Catálogo</span>
+            <div class="catalog-controls">
+              <button id="catalog-width" class="mini-btn" title="Ampliar / reducir panel">
+                <svg viewBox="0 0 16 16"><path d="M6 3 H3 V6 M10 3 H13 V6 M6 13 H3 V10 M10 13 H13 V10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </button>
+              <button id="catalog-collapse" class="mini-btn" title="Minimizar panel">
+                <svg viewBox="0 0 16 16"><path d="M10 3 L5 8 L10 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </div>
           <nav id="catalog-tabs">
             <button data-tab="furniture" class="active">Muebles</button>
             <button data-tab="openings">Puertas y ventanas</button>
@@ -38,6 +69,10 @@
           </nav>
           <div id="catalog-cards"></div>
         </aside>
+        <button id="catalog-reopen" hidden title="Abrir catálogo">
+          <svg viewBox="0 0 16 16"><path d="M6 3 L11 8 L6 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Catálogo</span>
+        </button>
 
         <div id="container3d"></div>
 
