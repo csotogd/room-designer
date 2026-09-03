@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "pipeline:ingest": "tsx pipeline/cli/ingest.ts",
-    "pipeline:generate": "tsx pipeline/cli/generate.ts"
+    "pipeline:generate": "tsx pipeline/cli/generate.ts",
+    "pipeline:link": "tsx pipeline/cli/link.ts"
   },
   "keywords": [],
   "author": "",

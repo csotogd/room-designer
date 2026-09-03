@@ -73,4 +73,31 @@ feature('Catalog ingestion and mesh generation pipeline', () => {
     const queue = pendingProducts(products)
     expect(queue.map((p) => p.id)).toEqual(['a', 'c'])
   })
+
+  scenario('Bucket products become app catalog entries in meters', async () => {
+    const { toAppCatalogEntry } = await import('../../pipeline/core/appCatalog')
+    const scraped: ScrapedProduct = {
+      ...product('silla-tento', true),
+      name: 'Mesa de comedor Tento',
+      price: 79.95,
+      widthCm: 46.5,
+      depthCm: 53,
+      heightCm: 82.5,
+    }
+    const entry = toAppCatalogEntry(scraped, '/catalog')!
+    expect(entry.width).toBeCloseTo(0.465)
+    expect(entry.depth).toBeCloseTo(0.53)
+    expect(entry.height).toBeCloseTo(0.825)
+    expect(entry.price).toBeCloseTo(79.95)
+    expect(entry.isSurface).toBe(true)
+    expect(entry.assets.imageUrl).toBe('/catalog/test/images/silla-tento.jpg')
+    expect(entry.assets.modelUrl).toBe('/catalog/test/models/silla-tento.glb')
+
+    const withoutModel = toAppCatalogEntry(
+      { ...scraped, modelPath: undefined },
+      '/catalog',
+    )!
+    expect(withoutModel.assets.modelUrl).toBeUndefined()
+    expect(withoutModel.assets.imageUrl).toBeDefined()
+  })
 })

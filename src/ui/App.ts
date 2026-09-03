@@ -8,6 +8,7 @@ import { RemoveOpeningCommand } from '../app/commands/PlanCommands'
 import { SetFloorFinishCommand, SetWallFinishCommand } from '../app/commands/FinishCommands'
 import { RemoveLightCommand } from '../app/commands/LightCommands'
 import { DefaultCatalog } from '../app/catalog/DefaultCatalog'
+import type { FurnitureCatalog } from '../app/catalog/FurnitureCatalog'
 import { deserializeProject, serializeProject } from '../app/serialization/ProjectSerializer'
 import { LocalStorageProjectRepository } from '../app/persistence/LocalStorageProjectRepository'
 import type { ProjectRepository } from '../app/persistence/ProjectRepository'
@@ -26,7 +27,7 @@ import type { ToolContext } from './types'
 export class App {
   private project: Project
   private readonly stack = new CommandStack()
-  private readonly catalog = new DefaultCatalog()
+  private readonly catalog: FurnitureCatalog
   private readonly view3d: View3D
   private view2d: View2D | null = null
   private readonly catalogPanel: CatalogPanel
@@ -37,7 +38,11 @@ export class App {
   private hintTimer: number | undefined
   private unsubscribe: () => void
 
-  constructor(private readonly root: Document) {
+  constructor(
+    private readonly root: Document,
+    catalog: FurnitureCatalog = new DefaultCatalog(),
+  ) {
+    this.catalog = catalog
     this.project = new Project(FloorPlan.rectangle(4.5, 3.5))
     this.unsubscribe = this.subscribeProject()
 

@@ -16,3 +16,9 @@ Feature: Catalog ingestion and mesh generation pipeline
   Scenario: The generation queue only picks products without a model
     Given three stored products, one of them with a model already generated
     Then the pending queue contains the other two
+
+  Scenario: Bucket products become app catalog entries in meters
+    Given a scraped product with dimensions in centimeters and a generated model
+    When it is linked into the app catalog
+    Then the entry has meters, price, the product photo and the model url
+    And a product without model keeps only the photo
