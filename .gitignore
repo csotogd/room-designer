@@ -7,3 +7,4 @@ reports/
 data/catalog/
 public/catalog/
 .env
+coverage/

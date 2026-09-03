@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  calidad:
+    name: Typecheck · tests · cobertura
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests (unitarios + aceptación Gherkin + propiedades + arquitectura)
+        run: npx vitest run --coverage
+      - name: Puerta de cobertura de specs
+        # Redundante con la suite (spec-coverage.test.ts) pero explícito aquí:
+        # cada escenario Gherkin debe tener test de aceptación.
+        run: npx vitest run tests/acceptance/spec-coverage.test.ts
+
+  build:
+    name: Build de producción
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  mutacion:
+    name: Mutation testing (rompe < 75%)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Stryker
+        run: npx stryker run
+
+  infra:
+    name: Terraform (fmt + validate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.6
+      - name: Formato
+        run: tofu -chdir=infra/gcp fmt -check -diff
+      - name: Validación
+        run: |
+          tofu -chdir=infra/gcp init -backend=false -input=false
+          tofu -chdir=infra/gcp validate

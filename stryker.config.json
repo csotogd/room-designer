@@ -11,7 +11,7 @@
     "configFile": "vite.config.ts"
   },
   "reporters": ["clear-text", "progress"],
-  "thresholds": { "high": 85, "low": 70, "break": null },
+  "thresholds": { "high": 85, "low": 70, "break": 75 },
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true
 }
