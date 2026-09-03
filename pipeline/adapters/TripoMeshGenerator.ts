@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
-import type { MeshGenerator, ProductDimensions } from '../core/types'
+import type { GenerationResult, MeshGenerator, ProductDimensions } from '../core/types'
 
 const API = 'https://api.tripo3d.ai/v2/openapi'
 
@@ -16,7 +16,7 @@ export class TripoMeshGenerator implements MeshGenerator {
     if (!apiKey) throw new Error('TRIPO_API_KEY no definida')
   }
 
-  async generate(imageAbsolutePath: string, _dims: ProductDimensions): Promise<Uint8Array> {
+  async generate(imageAbsolutePath: string, _dims: ProductDimensions): Promise<GenerationResult> {
     const image = await readFile(imageAbsolutePath)
     const form = new FormData()
     form.append('file', new Blob([image], { type: 'image/jpeg' }), basename(imageAbsolutePath))
@@ -37,14 +37,26 @@ export class TripoMeshGenerator implements MeshGenerator {
       await new Promise((resolve) => setTimeout(resolve, 4000))
       const status = await this.call<{
         status: string
-        output?: { pbr_model?: string; model?: string }
+        output?: { pbr_model?: string; model?: string; rendered_image?: string }
       }>(`/task/${task.task_id}`, {})
       if (status.status === 'success') {
         const url = status.output?.pbr_model ?? status.output?.model
         if (!url) throw new Error('tarea success sin URL de modelo')
         const response = await fetch(url)
         if (!response.ok) throw new Error(`descarga GLB: HTTP ${response.status}`)
-        return new Uint8Array(await response.arrayBuffer())
+        const result: GenerationResult = {
+          model: new Uint8Array(await response.arrayBuffer()),
+        }
+        // Render de previsualización del propio proveedor: entrada del juez VLM.
+        if (status.output?.rendered_image) {
+          try {
+            const preview = await fetch(status.output.rendered_image)
+            if (preview.ok) result.preview = new Uint8Array(await preview.arrayBuffer())
+          } catch {
+            // sin preview no pasa nada: el juez quedará en pending
+          }
+        }
+        return result
       }
       if (['failed', 'cancelled', 'banned', 'expired'].includes(status.status)) {
         throw new Error(`tarea Tripo terminó en estado ${status.status}`)

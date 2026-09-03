@@ -8,6 +8,7 @@ import { JsonLdCatalogScraper } from '../adapters/JsonLdCatalogScraper'
 import { LocalFolderAssetStore } from '../adapters/LocalFolderAssetStore'
 import { pickPackshot } from '../adapters/packshot'
 import { SITES } from '../adapters/sites'
+import { carryOverGeneration } from '../core/types'
 
 const args = new Map<string, string>()
 for (let i = 2; i < process.argv.length; i += 2) {
@@ -28,6 +29,7 @@ const store = new LocalFolderAssetStore(root)
 const scraper = new JsonLdCatalogScraper(site)
 
 console.log(`Ingesta de ${siteId} (límite ${limit})…`)
+const previous = new Map((await store.readProducts(siteId)).map((p) => [p.id, p]))
 const products = await scraper.scrape(limit)
 
 const fetchBytes = async (url: string): Promise<Uint8Array> => {
@@ -46,7 +48,10 @@ for (const product of products) {
     const packshot = await pickPackshot(candidates, fetchBytes)
     if (packshot) {
       product.generationImagePath = await store.saveGenerationImage(siteId, product.id, packshot.bytes)
+      product.generationImageUrl = packshot.url
     }
+
+    carryOverGeneration(previous.get(product.id), product)
     console.log(
       `[ok] ${product.name.slice(0, 44).padEnd(44)} ${product.widthCm}×${product.depthCm}×${product.heightCm} cm  packshot: ${packshot ? Math.round(packshot.score) : 'no'} (${candidates.length} candidatas)`,
     )

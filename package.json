@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "pipeline:ingest": "tsx pipeline/cli/ingest.ts",
     "pipeline:generate": "tsx pipeline/cli/generate.ts",
-    "pipeline:link": "tsx pipeline/cli/link.ts"
+    "pipeline:link": "tsx pipeline/cli/link.ts",
+    "pipeline:judge": "tsx pipeline/cli/judge.ts"
   },
   "keywords": [],
   "author": "",

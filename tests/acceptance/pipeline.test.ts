@@ -103,9 +103,19 @@ feature('Catalog ingestion and mesh generation pipeline', () => {
       .png()
       .toBuffer()
 
+    // "Muestra de material": textura uniforme clara sin objeto (el caso de
+    // la loncha de cuero de la Dravena) — debe puntuar peor que el packshot.
+    const swatch = await sharp({
+      create: { width: 64, height: 64, channels: 3, background: { r: 235, g: 232, b: 228 } },
+    })
+      .png()
+      .toBuffer()
+
     const studioScore = await packshotScore(studio)
     const lifestyleScore = await packshotScore(lifestyle)
+    const swatchScore = await packshotScore(swatch)
     expect(studioScore).toBeGreaterThan(lifestyleScore)
+    expect(studioScore).toBeGreaterThan(swatchScore)
   })
 
   scenario('Bucket products become app catalog entries in meters', async () => {
@@ -133,5 +143,65 @@ feature('Catalog ingestion and mesh generation pipeline', () => {
     )!
     expect(withoutModel.assets.modelUrl).toBeUndefined()
     expect(withoutModel.assets.imageUrl).toBeDefined()
+    expect(entry.origin).toBe('test')
+  })
+
+  scenario('Re-ingesting preserves models whose input photo did not change', async () => {
+    const { carryOverGeneration } = await import('../../pipeline/core/types')
+    const old: ScrapedProduct = {
+      ...product('silla-a', true),
+      generationImageUrl: 'https://cdn/x/packshot.jpg',
+      previewPath: 'test/previews/silla-a.webp',
+      quality: { status: 'approved', judge: 'noop' },
+    }
+
+    const sameInput: ScrapedProduct = {
+      ...product('silla-a'),
+      generationImageUrl: 'https://cdn/x/packshot.jpg',
+    }
+    carryOverGeneration(old, sameInput)
+    expect(sameInput.modelPath).toBe(old.modelPath)
+    expect(sameInput.quality?.status).toBe('approved')
+
+    const changedInput: ScrapedProduct = {
+      ...product('silla-a'),
+      generationImageUrl: 'https://cdn/x/OTRA.jpg',
+    }
+    carryOverGeneration(old, changedInput)
+    expect(changedInput.modelPath).toBeUndefined()
+    expect(changedInput.quality).toBeUndefined()
+  })
+
+  scenario('Rejected products do not reach the app catalog', async () => {
+    const { toAppCatalogEntry } = await import('../../pipeline/core/appCatalog')
+    const base: ScrapedProduct = {
+      ...product('silla-b', true),
+      widthCm: 50,
+      depthCm: 50,
+      heightCm: 80,
+    }
+    const rejected = toAppCatalogEntry(
+      { ...base, quality: { status: 'rejected', reason: 'geometría rota' } },
+      '/catalog',
+    )
+    const approved = toAppCatalogEntry(
+      { ...base, quality: { status: 'approved' } },
+      '/catalog',
+    )
+    const pending = toAppCatalogEntry({ ...base, quality: { status: 'pending' } }, '/catalog')
+    expect(rejected).toBeNull()
+    expect(approved).not.toBeNull()
+    expect(pending).not.toBeNull()
+  })
+
+  scenario('The quality judge port defaults to approving when unconfigured', async () => {
+    const { judgeFromEnv, NoopJudge } = await import('../../pipeline/adapters/judges')
+    const judge = judgeFromEnv({} as NodeJS.ProcessEnv)
+    expect(judge).toBeInstanceOf(NoopJudge)
+    const verdict = await judge.judge({
+      product: product('silla-c', true),
+      modelPath: '/tmp/x.glb',
+    })
+    expect(verdict.status).toBe('approved')
   })
 })

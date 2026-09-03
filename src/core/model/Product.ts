@@ -44,6 +44,8 @@ export interface ProductData {
   color: string
   /** Forma procedural; por defecto, el propio id si es una forma conocida. */
   form?: ProductForm
+  /** Sitio web de procedencia (catálogos externos); vacío en productos locales. */
+  origin?: string
   assets?: ProductAssets
 }
 
@@ -63,6 +65,7 @@ export class Product {
   readonly isSurface: boolean
   readonly color: string
   readonly form: ProductForm
+  readonly origin?: string
   readonly assets: ProductAssets
 
   constructor(data: ProductData) {
@@ -77,6 +80,7 @@ export class Product {
     this.color = data.color
     this.form =
       data.form ?? (PRODUCT_FORMS.includes(data.id as ProductForm) ? (data.id as ProductForm) : 'box')
+    this.origin = data.origin
     this.assets = data.assets ?? {}
   }
 }

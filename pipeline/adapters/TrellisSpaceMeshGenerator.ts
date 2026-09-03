@@ -1,5 +1,5 @@
 import { Client, handle_file } from '@gradio/client'
-import type { MeshGenerator, ProductDimensions } from '../core/types'
+import type { GenerationResult, MeshGenerator, ProductDimensions } from '../core/types'
 
 const SPACE = 'microsoft/TRELLIS.2'
 
@@ -16,7 +16,7 @@ export class TrellisSpaceMeshGenerator implements MeshGenerator {
 
   constructor(private readonly hfToken?: string) {}
 
-  async generate(imageAbsolutePath: string, _dims: ProductDimensions): Promise<Uint8Array> {
+  async generate(imageAbsolutePath: string, _dims: ProductDimensions): Promise<GenerationResult> {
     const client = await Client.connect(
       SPACE,
       this.hfToken ? { hf_token: this.hfToken as `hf_${string}` } : undefined,
@@ -62,6 +62,6 @@ export class TrellisSpaceMeshGenerator implements MeshGenerator {
     }
     const response = await fetch((file.url ?? file.path)!)
     if (!response.ok) throw new Error(`descarga GLB: HTTP ${response.status}`)
-    return new Uint8Array(await response.arrayBuffer())
+    return { model: new Uint8Array(await response.arrayBuffer()) }
   }
 }

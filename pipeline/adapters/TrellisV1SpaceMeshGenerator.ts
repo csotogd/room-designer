@@ -1,6 +1,6 @@
 import { Client, handle_file } from '@gradio/client'
 import { withTimeout } from '../core/withTimeout'
-import type { MeshGenerator, ProductDimensions } from '../core/types'
+import type { GenerationResult, MeshGenerator, ProductDimensions } from '../core/types'
 
 const SPACE = 'trellis-community/TRELLIS'
 
@@ -14,7 +14,7 @@ export class TrellisV1SpaceMeshGenerator implements MeshGenerator {
 
   constructor(private readonly hfToken?: string) {}
 
-  async generate(imageAbsolutePath: string, _dims: ProductDimensions): Promise<Uint8Array> {
+  async generate(imageAbsolutePath: string, _dims: ProductDimensions): Promise<GenerationResult> {
     const client = await withTimeout(
       Client.connect(
         SPACE,
@@ -64,6 +64,6 @@ export class TrellisV1SpaceMeshGenerator implements MeshGenerator {
     }
     const response = await fetch(file)
     if (!response.ok) throw new Error(`descarga GLB: HTTP ${response.status}`)
-    return new Uint8Array(await response.arrayBuffer())
+    return { model: new Uint8Array(await response.arrayBuffer()) }
   }
 }

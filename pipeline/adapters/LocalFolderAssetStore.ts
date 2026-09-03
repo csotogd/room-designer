@@ -39,6 +39,10 @@ export class LocalFolderAssetStore implements AssetStore {
     return this.save(join(site, 'models', `${productId}.glb`), bytes)
   }
 
+  async savePreview(site: string, productId: string, bytes: Uint8Array): Promise<string> {
+    return this.save(join(site, 'previews', `${productId}.webp`), bytes)
+  }
+
   absolute(relativePath: string): string {
     return resolve(this.root, relativePath)
   }

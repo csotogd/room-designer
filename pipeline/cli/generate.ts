@@ -9,6 +9,7 @@ import { LocalFolderAssetStore } from '../adapters/LocalFolderAssetStore'
 import { TrellisSpaceMeshGenerator } from '../adapters/TrellisSpaceMeshGenerator'
 import { TrellisV1SpaceMeshGenerator } from '../adapters/TrellisV1SpaceMeshGenerator'
 import { TripoMeshGenerator } from '../adapters/TripoMeshGenerator'
+import { judgeFromEnv } from '../adapters/judges'
 import { pendingProducts, type MeshGenerator } from '../core/types'
 
 const args = new Map<string, string>()
@@ -32,23 +33,36 @@ const store = new LocalFolderAssetStore(root)
 const products = await store.readProducts(siteId)
 const queue = pendingProducts(products).slice(0, count)
 
-console.log(`Generando ${queue.length} modelos con ${generator.name}…`)
+const judge = judgeFromEnv()
+console.log(`Generando ${queue.length} modelos con ${generator.name} (juez: ${judge.name})…`)
 let ok = 0
 for (const product of queue) {
   const t0 = Date.now()
   try {
-    const glb = await generator.generate(
+    const result = await generator.generate(
       store.absolute(product.generationImagePath ?? product.imagePath!),
       {
-      widthCm: product.widthCm,
-      depthCm: product.depthCm,
-      heightCm: product.heightCm,
+        widthCm: product.widthCm,
+        depthCm: product.depthCm,
+        heightCm: product.heightCm,
+      },
+    )
+    product.modelPath = await store.saveModel(siteId, product.id, result.model)
+    if (result.preview) {
+      product.previewPath = await store.savePreview(siteId, product.id, result.preview)
+    }
+    product.quality = await judge.judge({
+      product,
+      packshotPath: product.generationImagePath
+        ? store.absolute(product.generationImagePath)
+        : undefined,
+      previewPath: product.previewPath ? store.absolute(product.previewPath) : undefined,
+      modelPath: store.absolute(product.modelPath),
     })
-    product.modelPath = await store.saveModel(siteId, product.id, glb)
     await store.saveProducts(siteId, products) // checkpoint incremental
     ok += 1
     console.log(
-      `[ok] ${product.id.slice(0, 50).padEnd(50)} ${Math.round(glb.length / 1024)} KB en ${Math.round((Date.now() - t0) / 1000)}s`,
+      `[ok] ${product.id.slice(0, 50).padEnd(50)} ${Math.round(result.model.length / 1024)} KB en ${Math.round((Date.now() - t0) / 1000)}s · juez: ${product.quality.status}`,
     )
   } catch (error) {
     console.warn(

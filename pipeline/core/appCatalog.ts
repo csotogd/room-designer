@@ -12,6 +12,8 @@ export interface AppCatalogEntry {
   isSurface: boolean
   color: string
   form: 'box'
+  /** Sitio web de procedencia; el menú de muebles solo enseña productos con origen. */
+  origin: string
   assets: { imageUrl?: string; modelUrl?: string }
 }
 
@@ -27,6 +29,8 @@ export function toAppCatalogEntry(
   baseUrl: string,
 ): AppCatalogEntry | null {
   if (!product.widthCm || !product.heightCm || !product.imagePath) return null
+  // Un modelo rechazado por el juez de calidad no entra en el catálogo.
+  if (product.quality?.status === 'rejected') return null
   const url = (path: string) => `${baseUrl}/${path.split('/').map(encodeURIComponent).join('/')}`
   return {
     id: `${product.site}-${product.id}`,
@@ -39,6 +43,7 @@ export function toAppCatalogEntry(
     isSurface: SURFACE_HINTS.test(product.name),
     color: '#b8ab9b',
     form: 'box',
+    origin: product.site,
     assets: {
       imageUrl: url(product.imagePath),
       ...(product.modelPath ? { modelUrl: url(product.modelPath) } : {}),

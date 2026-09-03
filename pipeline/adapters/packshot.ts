@@ -6,8 +6,11 @@ import sharp from 'sharp'
  * modelo contaminado; el packshot (producto solo sobre fondo neutro) produce
  * el mueble limpio.
  *
- * Heurística: en un packshot el borde de la imagen es claro y uniforme.
- * score = brillo_medio_del_borde − 2 × desviación_típica_del_borde.
+ * Heurística en dos partes:
+ *  - borde claro y uniforme (fondo de estudio): brillo − 2×desviación
+ *  - y OBJETO en el centro: sin contraste centro-borde, la foto es una
+ *    muestra de material o un fondo vacío (así se coló la "loncha de cuero"
+ *    de la silla Dravena) y se penaliza fuerte.
  */
 export async function packshotScore(imageBytes: Uint8Array): Promise<number> {
   const SIZE = 64
@@ -18,16 +21,33 @@ export async function packshotScore(imageBytes: Uint8Array): Promise<number> {
     .toBuffer({ resolveWithObject: true })
 
   const border: number[] = []
+  const center: number[] = []
+  const CENTER_LO = 20
+  const CENTER_HI = 44
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      if (x >= MARGIN && x < SIZE - MARGIN && y >= MARGIN && y < SIZE - MARGIN) continue
       const i = (y * SIZE + x) * info.channels
-      border.push((data[i]! + data[i + 1]! + data[i + 2]!) / 3)
+      const luma = (data[i]! + data[i + 1]! + data[i + 2]!) / 3
+      if (x < MARGIN || x >= SIZE - MARGIN || y < MARGIN || y >= SIZE - MARGIN) {
+        border.push(luma)
+      } else if (x >= CENTER_LO && x < CENTER_HI && y >= CENTER_LO && y < CENTER_HI) {
+        center.push(luma)
+      }
     }
   }
-  const mean = border.reduce((a, b) => a + b, 0) / border.length
-  const variance = border.reduce((a, b) => a + (b - mean) ** 2, 0) / border.length
-  return mean - 2 * Math.sqrt(variance)
+  const stats = (px: number[]) => {
+    const mean = px.reduce((a, b) => a + b, 0) / px.length
+    const sd = Math.sqrt(px.reduce((a, b) => a + (b - mean) ** 2, 0) / px.length)
+    return { mean, sd }
+  }
+  const b = stats(border)
+  const c = stats(center)
+
+  const cleanBackground = b.mean - 2 * b.sd
+  // Evidencia de objeto: el centro varía y/o difiere del fondo.
+  const objectEvidence = c.sd + Math.abs(c.mean - b.mean)
+  const swatchPenalty = objectEvidence < 25 ? 150 : 0
+  return cleanBackground + Math.min(objectEvidence, 80) - swatchPenalty
 }
 
 export interface PackshotPick {

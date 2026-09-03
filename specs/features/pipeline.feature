@@ -26,3 +26,19 @@ Feature: Catalog ingestion and mesh generation pipeline
     When it is linked into the app catalog
     Then the entry has meters, price, the product photo and the model url
     And a product without model keeps only the photo
+    And the entry carries its origin site
+
+  Scenario: Re-ingesting preserves models whose input photo did not change
+    Given a stored product with a generated model
+    When the same product is ingested again with the same generation photo
+    Then it keeps its model
+    And if the generation photo changed, the model is discarded
+
+  Scenario: Rejected products do not reach the app catalog
+    Given products approved, rejected and pending by the quality judge
+    When they are linked into the app catalog
+    Then the rejected one is left out and the others are included
+
+  Scenario: The quality judge port defaults to approving when unconfigured
+    Given no judge provider configured
+    Then the configured judge is the no-op judge and it approves

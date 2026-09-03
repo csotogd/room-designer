@@ -157,7 +157,18 @@ export class CatalogPanel {
   // ── Tarjetas de producto (muebles) ───────────────────────────────────────
 
   private renderProductCards(container: HTMLElement): void {
-    for (const product of this.catalog.items()) {
+    // El menú de muebles enseña solo productos de catálogos web (con origen);
+    // los locales siguen existiendo para resolver proyectos antiguos.
+    const products = this.catalog.items().filter((p) => p.origin)
+    if (products.length === 0) {
+      const empty = this.root.createElement('div')
+      empty.style.cssText = 'grid-column:1/-1;color:#6e6a63;font-size:12.5px;line-height:1.5;padding:8px'
+      empty.textContent =
+        'Sin productos web todavía: ejecuta la ingesta del pipeline (npm run pipeline:ingest) y publícalos con npm run pipeline:link.'
+      container.append(empty)
+      return
+    }
+    for (const product of products) {
       // div y no button: la caja anónima interna de <button> ignora la altura
       // de la imagen al calcular el tamaño intrínseco de la fila del grid.
       const card = this.root.createElement('div')
