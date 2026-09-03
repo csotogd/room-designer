@@ -74,6 +74,40 @@ feature('Catalog ingestion and mesh generation pipeline', () => {
     expect(queue.map((p) => p.id)).toEqual(['a', 'c'])
   })
 
+  scenario('The packshot scorer prefers clean studio shots over lifestyle photos', async () => {
+    const sharp = (await import('sharp')).default
+    const { packshotScore } = await import('../../pipeline/adapters/packshot')
+
+    // "Packshot": fondo claro uniforme con el producto oscuro en el centro.
+    const studio = await sharp({
+      create: { width: 64, height: 64, channels: 3, background: { r: 244, g: 242, b: 238 } },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: { width: 20, height: 30, channels: 3, background: { r: 60, g: 40, b: 25 } },
+          })
+            .png()
+            .toBuffer(),
+          left: 22,
+          top: 20,
+        },
+      ])
+      .png()
+      .toBuffer()
+
+    // "Bodegón": la escena llena el encuadre hasta los bordes (ruido).
+    const noise = Buffer.alloc(64 * 64 * 3)
+    for (let i = 0; i < noise.length; i++) noise[i] = (i * 2654435761) % 255
+    const lifestyle = await sharp(noise, { raw: { width: 64, height: 64, channels: 3 } })
+      .png()
+      .toBuffer()
+
+    const studioScore = await packshotScore(studio)
+    const lifestyleScore = await packshotScore(lifestyle)
+    expect(studioScore).toBeGreaterThan(lifestyleScore)
+  })
+
   scenario('Bucket products become app catalog entries in meters', async () => {
     const { toAppCatalogEntry } = await import('../../pipeline/core/appCatalog')
     const scraped: ScrapedProduct = {

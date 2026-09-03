@@ -18,8 +18,12 @@ export interface ScrapedProduct {
   heightCm?: number
   /** Resto de propiedades dimensionales publicadas (altura asiento, peso…). */
   extraDims: Record<string, number>
+  /** Resto de fotos del producto (galería), para elegir el packshot. */
+  galleryUrls?: string[]
   /** Rutas relativas dentro del bucket, cuando ya se han materializado. */
   imagePath?: string
+  /** Foto elegida como entrada de la generación 3D (packshot, producto solo). */
+  generationImagePath?: string
   modelPath?: string
 }
 
@@ -42,6 +46,7 @@ export interface AssetStore {
   readProducts(site: string): Promise<ScrapedProduct[]>
   /** Devuelve la ruta relativa bajo la raíz del bucket. */
   saveImage(site: string, productId: string, bytes: Uint8Array): Promise<string>
+  saveGenerationImage(site: string, productId: string, bytes: Uint8Array): Promise<string>
   saveModel(site: string, productId: string, bytes: Uint8Array): Promise<string>
   absolute(relativePath: string): string
 }

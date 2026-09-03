@@ -6,6 +6,7 @@
  */
 import { JsonLdCatalogScraper } from '../adapters/JsonLdCatalogScraper'
 import { LocalFolderAssetStore } from '../adapters/LocalFolderAssetStore'
+import { pickPackshot } from '../adapters/packshot'
 import { SITES } from '../adapters/sites'
 
 const args = new Map<string, string>()
@@ -29,19 +30,25 @@ const scraper = new JsonLdCatalogScraper(site)
 console.log(`Ingesta de ${siteId} (límite ${limit})…`)
 const products = await scraper.scrape(limit)
 
+const fetchBytes = async (url: string): Promise<Uint8Array> => {
+  const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return new Uint8Array(await response.arrayBuffer())
+}
+
 for (const product of products) {
   try {
-    const response = await fetch(product.imageUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    product.imagePath = await store.saveImage(
-      siteId,
-      product.id,
-      new Uint8Array(await response.arrayBuffer()),
-    )
+    // Foto de tarjeta: la principal (bodegón, queda bien en el catálogo).
+    product.imagePath = await store.saveImage(siteId, product.id, await fetchBytes(product.imageUrl))
+
+    // Foto de generación 3D: el packshot (producto solo) de entre la galería.
+    const candidates = [product.imageUrl, ...(product.galleryUrls ?? [])]
+    const packshot = await pickPackshot(candidates, fetchBytes)
+    if (packshot) {
+      product.generationImagePath = await store.saveGenerationImage(siteId, product.id, packshot.bytes)
+    }
     console.log(
-      `[ok] ${product.name.slice(0, 48).padEnd(48)} ${product.widthCm}×${product.depthCm}×${product.heightCm} cm  ${product.price ?? '?'} ${product.currency ?? ''}`,
+      `[ok] ${product.name.slice(0, 44).padEnd(44)} ${product.widthCm}×${product.depthCm}×${product.heightCm} cm  packshot: ${packshot ? Math.round(packshot.score) : 'no'} (${candidates.length} candidatas)`,
     )
   } catch (error) {
     console.warn(`[img-err] ${product.id}: ${String(error)}`)

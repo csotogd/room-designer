@@ -31,6 +31,10 @@ export class LocalFolderAssetStore implements AssetStore {
     return this.save(join(site, 'images', `${productId}.jpg`), bytes)
   }
 
+  async saveGenerationImage(site: string, productId: string, bytes: Uint8Array): Promise<string> {
+    return this.save(join(site, 'gen-images', `${productId}.jpg`), bytes)
+  }
+
   async saveModel(site: string, productId: string, bytes: Uint8Array): Promise<string> {
     return this.save(join(site, 'models', `${productId}.glb`), bytes)
   }

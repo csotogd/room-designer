@@ -17,6 +17,10 @@ Feature: Catalog ingestion and mesh generation pipeline
     Given three stored products, one of them with a model already generated
     Then the pending queue contains the other two
 
+  Scenario: The packshot scorer prefers clean studio shots over lifestyle photos
+    Given a product photo with a uniform light background and a busy lifestyle photo
+    Then the packshot score of the studio shot is higher
+
   Scenario: Bucket products become app catalog entries in meters
     Given a scraped product with dimensions in centimeters and a generated model
     When it is linked into the app catalog

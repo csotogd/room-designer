@@ -37,7 +37,9 @@ let ok = 0
 for (const product of queue) {
   const t0 = Date.now()
   try {
-    const glb = await generator.generate(store.absolute(product.imagePath!), {
+    const glb = await generator.generate(
+      store.absolute(product.generationImagePath ?? product.imagePath!),
+      {
       widthCm: product.widthCm,
       depthCm: product.depthCm,
       heightCm: product.heightCm,

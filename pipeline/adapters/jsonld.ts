@@ -59,6 +59,18 @@ export function extractJsonLdProduct(
       if (typeof currency === 'string') product.currency = currency
     }
 
+    // Galería: todas las imágenes del CDN que comparten slug con la principal
+    // (la principal suele ser un bodegón; el packshot está en la galería).
+    const slug = image.split('/').pop()
+    if (slug) {
+      const gallery = new Set<string>()
+      for (const m of html.matchAll(/https?:\/\/[^"'\s]+\/(\d+)(?:-[a-z_]+)?\/([^"'\s]+\.jpe?g)/g)) {
+        if (m[2] === slug && !m[0].includes('-large_default')) gallery.add(m[0])
+      }
+      gallery.delete(image)
+      if (gallery.size > 0) product.galleryUrls = [...gallery].slice(0, 8)
+    }
+
     for (const property of (data.additionalProperty as Record<string, unknown>[]) ?? []) {
       if (property['@type'] !== 'QuantitativeValue') continue
       const rawName = String(property.name ?? '').toLowerCase().trim()
