@@ -4,6 +4,7 @@ import type { SiteConfig } from '../core/types'
 export const SITES: Record<string, SiteConfig> = {
   sklum: {
     id: 'sklum',
+    country: 'es',
     origin: 'https://www.sklum.com',
     categoryUrls: [
       'https://www.sklum.com/es/3427-comprar-sillas-de-comedor',

@@ -7,6 +7,8 @@ export interface ScrapedProduct {
   /** Identificador estable dentro del sitio (slug derivado de la URL). */
   id: string
   site: string
+  /** País del catálogo de origen (en cloud: colección catalog_{site}_{country}). */
+  country?: string
   sourceUrl: string
   name: string
   imageUrl: string
@@ -48,6 +50,8 @@ export interface GenerationResult {
 /** Configuración por sitio para el scraper genérico basado en JSON-LD. */
 export interface SiteConfig {
   id: string
+  /** País del catálogo (ISO): en cloud, un catálogo por sitio × país. */
+  country: string
   categoryUrls: string[]
   /** Patrón de los href de página de producto dentro de una categoría. */
   productLinkPattern: RegExp

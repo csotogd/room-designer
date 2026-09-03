@@ -41,6 +41,7 @@ export class JsonLdCatalogScraper implements CatalogScraper {
         try {
           const product = extractJsonLdProduct(await this.fetchText(url), url, this.config.id)
           if (product && product.widthCm && product.heightCm) {
+            product.country = this.config.country
             products.push(product)
           }
           await sleep(this.delayMs)

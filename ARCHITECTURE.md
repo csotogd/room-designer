@@ -1,5 +1,13 @@
 # Arquitectura y camino a producción
 
+> **Regla de doble vía (desde 2026-09-03):** toda capability del pipeline se
+> desarrolla en dos rutas a la vez — la **demo local** (CLIs + carpeta
+> `data/catalog`) y la **solución cloud escalable en GCP** (Terraform en
+> [`infra/gcp`](infra/gcp), ver su README). Misma lógica y mismos puertos;
+> cambian los adaptadores: Scheduler→ingesta, GCS como AssetStore, VLM juez
+> de imagen y de calidad, Firestore como catálogo por proveedor/país. El
+> "decode" de imagen por VLM existe como flag y nace apagado.
+
 ## Estado actual (todo en el navegador)
 
 ```
