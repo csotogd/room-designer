@@ -120,10 +120,10 @@ export class App {
         currency: 'EUR',
         maximumFractionDigits: 0,
       })
-      price.style.color = '#767676'
+      price.style.color = '#8a8072'
       panel.append(name, price)
       panel.append(
-        this.pill('⟳ Rotar (R)', () => this.rotateSelection(furniture)),
+        this.pill('⟳ 45° (R) · rueda para girar fino', () => this.rotateSelection(furniture)),
         this.pill('Eliminar', () => {
           this.stack.execute(new RemoveFurnitureCommand(this.project, furniture))
           this.view3dSelect(null)
@@ -134,7 +134,7 @@ export class App {
       panel.append(this.objName(opening.kind === 'door' ? 'Puerta' : 'Ventana'))
       const tip = this.root.createElement('span')
       tip.textContent = 'Arrástrala por la pared'
-      tip.style.color = '#767676'
+      tip.style.color = '#8a8072'
       tip.style.fontSize = '12px'
       panel.append(
         tip,
@@ -183,6 +183,9 @@ export class App {
     this.selection = selection
     this.renderInspector()
     this.view3d.setPlacement(null)
+    // La vista 3D bloquea la cámara mientras hay mueble seleccionado: al
+    // deseleccionar desde fuera (Esc, eliminar) hay que soltarla también.
+    if (!selection) this.view3d.clearSelection()
   }
 
   // ── Topbar ───────────────────────────────────────────────────────────────
@@ -242,9 +245,9 @@ export class App {
     })
   }
 
-  /** Rota 15° si el mueble sigue cabiendo dentro de la habitación. */
+  /** Rota 45° si el mueble sigue cabiendo dentro de la habitación. */
   private rotateSelection(furniture: Furniture): void {
-    const target = furniture.rotationY + Math.PI / 12
+    const target = furniture.rotationY + Math.PI / 4
     const { x, z } = furniture.position
     if (!fitsInRoom(this.project.floorPlan, furniture.item, x, z, target)) {
       this.hint('No se puede rotar ahí: chocaría con la pared.')
