@@ -12,7 +12,7 @@ import type { Project } from '../../core/model/Project'
 import type { Wall } from '../../core/model/Wall'
 import type { CatalogItem } from '../../core/model/CatalogItem'
 import type { CommandStack } from '../../app/commands/CommandStack'
-import { MoveFurnitureCommand } from '../../app/commands/FurnitureCommands'
+import { MoveFurnitureCommand, RotateFurnitureCommand } from '../../app/commands/FurnitureCommands'
 import { PlaceFurnitureCommand } from '../../app/commands/PlaceFurnitureCommand'
 import { AddOpeningCommand, MoveOpeningCommand } from '../../app/commands/PlanCommands'
 import { AddLightCommand, MoveLightCommand } from '../../app/commands/LightCommands'
@@ -45,6 +45,13 @@ export type Placement =
 
 export type Selectable = Extract<Pick, { type: 'furniture' | 'opening' | 'light' }>
 
+/**
+ * Qué parte de la escena hay que refrescar. `full` reconstruye todo; el resto
+ * son atajos baratos para los cambios continuos (arrastres, slider de hora)
+ * que antes forzaban una reconstrucción completa por cada movimiento de ratón.
+ */
+type SceneOp = 'full' | 'furniture' | 'lights' | 'walls' | 'sun'
+
 interface DragState {
   pick: Selectable
   moved: boolean
@@ -76,7 +83,7 @@ export class View3D {
   private readonly raycaster = new THREE.Raycaster()
   private roomGroup = new THREE.Group()
   private ghostGroup = new THREE.Group()
-  private dirty = true
+  private readonly pending = new Set<SceneOp>(['full'])
   private unsubscribe: (() => void) | null = null
 
   private furnitureGroups = new Map<Furniture, THREE.Group>()
@@ -88,8 +95,16 @@ export class View3D {
   private selection: Selectable | null = null
   private hovered: Selectable | null = null
   private drag: DragState | null = null
+  private rotateDrag: {
+    furniture: Furniture
+    startRotation: number
+    startX: number
+    moved: boolean
+  } | null = null
+  private readonly selectionRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
   private dragInvalid = false
   private placement: Placement | null = null
+  private furnitureGhost: { item: CatalogItem; group: THREE.Group } | null = null
   private placementValid = false
   private placementPoint: THREE.Vector3 | null = null
   private placementWallHit: { wall: Wall; offset: number } | null = null
@@ -103,6 +118,9 @@ export class View3D {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    // Las sombras solo dependen de la escena, no de la cámara: se recalculan
+    // bajo demanda (al cambiar el proyecto), no en cada frame de órbita.
+    this.renderer.shadowMap.autoUpdate = false
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     container.appendChild(this.renderer.domElement)
 
@@ -133,6 +151,21 @@ export class View3D {
     ground.receiveShadow = true
     this.scene.add(ground)
 
+    // Aro de selección bajo el mueble: sustituye al tinte azul sobre la malla.
+    this.selectionRing = new THREE.Mesh(
+      new THREE.RingGeometry(1, 1.07, 48),
+      new THREE.MeshBasicMaterial({
+        color: SELECT_TINT,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    )
+    this.selectionRing.geometry.rotateX(-Math.PI / 2)
+    this.selectionRing.visible = false
+    this.scene.add(this.selectionRing)
+
     this.scene.add(this.roomGroup, this.ghostGroup)
     this.subscribe()
     this.frameRoom()
@@ -147,13 +180,17 @@ export class View3D {
     this.project = project
     this.subscribe()
     this.select(null)
-    this.dirty = true
+    this.pending.add('full')
     this.frameRoom()
   }
 
   setPlacement(placement: Placement | null): void {
     this.placement = placement
-    this.ghostGroup.clear()
+    this.clearGhost()
+    if (!placement && this.furnitureGhost) {
+      disposeGroup(this.furnitureGhost.group)
+      this.furnitureGhost = null
+    }
     this.placementPoint = null
     this.placementWallHit = null
     if (placement) this.select(null)
@@ -183,8 +220,24 @@ export class View3D {
   // ── Bucle ────────────────────────────────────────────────────────────────
 
   private subscribe(): void {
-    this.unsubscribe = this.project.events.on('changed', () => {
-      this.dirty = true
+    this.unsubscribe = this.project.events.on('changed', ({ kind }) => {
+      switch (kind) {
+        case 'furniture-moved':
+        case 'furniture-rotated':
+          this.pending.add('furniture')
+          break
+        case 'light-moved':
+          this.pending.add('lights')
+          break
+        case 'opening-moved':
+          this.pending.add('walls')
+          break
+        case 'time-changed':
+          this.pending.add('sun')
+          break
+        default:
+          this.pending.add('full')
+      }
     })
   }
 
@@ -201,10 +254,17 @@ export class View3D {
    * siguiente animation frame).
    */
   private flushIfDirty(): void {
-    if (this.dirty) {
+    if (this.pending.size === 0) return
+    if (this.pending.has('full')) {
       this.rebuild()
-      this.dirty = false
+    } else {
+      if (this.pending.has('furniture')) this.syncFurniture()
+      if (this.pending.has('lights')) this.rebuildLights()
+      if (this.pending.has('walls')) this.rebuildWalls()
+      if (this.pending.has('sun')) this.updateSun()
     }
+    this.pending.clear()
+    this.renderer.shadowMap.needsUpdate = true
   }
 
   private rebuild(): void {
@@ -215,24 +275,14 @@ export class View3D {
     this.openingGroups.clear()
     this.lightGroups.clear()
     this.wallGroups.clear()
+    this.fadedWalls.clear()
 
-    for (const wall of this.project.floorPlan.walls) {
-      const group = buildWall(wall, this.project.wallFinish)
-      this.wallGroups.set(wall, group)
-      for (const opening of wall.openings) {
-        const fixture = group.children.find(
-          (c) => (c.userData.pick as Pick | undefined)?.type === 'opening' &&
-            (c.userData.pick as { opening: Opening }).opening === opening,
-        )
-        if (fixture instanceof THREE.Group) this.openingGroups.set(opening, fixture)
-      }
-      this.roomGroup.add(group)
-    }
+    this.buildWalls()
     const polygon = this.project.floorPlan.floorPolygon()
     if (polygon) this.roomGroup.add(buildFloor(polygon, this.project.floorFinish))
     for (const furniture of this.project.furniture) {
       const group = buildFurniture(furniture, () => {
-        this.dirty = true
+        this.pending.add('full')
       })
       this.furnitureGroups.set(furniture, group)
       this.roomGroup.add(group)
@@ -247,15 +297,92 @@ export class View3D {
     this.applyHighlights()
   }
 
+  private buildWalls(): void {
+    for (const wall of this.project.floorPlan.walls) {
+      const group = buildWall(wall, this.project.wallFinish)
+      this.wallGroups.set(wall, group)
+      for (const opening of wall.openings) {
+        const fixture = group.children.find(
+          (c) => (c.userData.pick as Pick | undefined)?.type === 'opening' &&
+            (c.userData.pick as { opening: Opening }).opening === opening,
+        )
+        if (fixture instanceof THREE.Group) this.openingGroups.set(opening, fixture)
+      }
+      this.roomGroup.add(group)
+    }
+  }
+
+  /** Un mueble movido/rotado no cambia de forma: basta sincronizar transformadas. */
+  private syncFurniture(): void {
+    for (const [furniture, group] of this.furnitureGroups) {
+      group.position.set(
+        furniture.position.x,
+        furniture.position.y + furniture.item.height / 2,
+        furniture.position.z,
+      )
+      group.rotation.y = -furniture.rotationY
+    }
+    this.updateSelectionRing()
+  }
+
+  private rebuildLights(): void {
+    for (const group of this.lightGroups.values()) {
+      this.roomGroup.remove(group)
+      disposeGroup(group)
+    }
+    this.lightGroups.clear()
+    for (const light of this.project.lights) {
+      const group = buildLight(light)
+      this.lightGroups.set(light, group)
+      this.roomGroup.add(group)
+    }
+    this.applyHighlights()
+  }
+
+  private rebuildWalls(): void {
+    for (const group of this.wallGroups.values()) {
+      this.roomGroup.remove(group)
+      disposeGroup(group)
+    }
+    this.wallGroups.clear()
+    this.openingGroups.clear()
+    this.fadedWalls.clear()
+    this.buildWalls()
+    this.applyHighlights()
+  }
+
+  /**
+   * Aperturas y luces se resaltan tintando la malla; los muebles nunca se
+   * tintan (los GLB comparten materiales entre clones y el "azul" pintaba
+   * todos los ejemplares): su selección se marca con el aro bajo el mueble.
+   */
   private applyHighlights(): void {
-    if (this.hovered && !this.drag) {
+    if (this.hovered && !this.drag && this.hovered.type !== 'furniture') {
       const group = this.groupFor(this.hovered)
       if (group) tintGroup(group, HOVER_TINT, 0.25)
     }
-    if (this.selection) {
+    if (this.selection && this.selection.type !== 'furniture') {
       const group = this.groupFor(this.selection)
       if (group) tintGroup(group, this.dragInvalid ? INVALID_TINT : SELECT_TINT, 0.35)
     }
+    this.updateSelectionRing()
+  }
+
+  private updateSelectionRing(): void {
+    if (this.selection?.type !== 'furniture') {
+      this.selectionRing.visible = false
+      return
+    }
+    const furniture = this.selection.furniture
+    const radius = Math.hypot(furniture.item.width, furniture.item.depth) / 2 + 0.06
+    this.selectionRing.scale.set(radius, 1, radius)
+    this.selectionRing.position.set(
+      furniture.position.x,
+      furniture.position.y + 0.015,
+      furniture.position.z,
+    )
+    this.selectionRing.material.color.setHex(this.dragInvalid ? INVALID_TINT : SELECT_TINT)
+    this.selectionRing.visible = true
   }
 
   private groupFor(pick: Selectable): THREE.Group | undefined {
@@ -269,36 +396,46 @@ export class View3D {
     }
   }
 
-  /** Paredes entre la cámara y la habitación se vuelven translúcidas. */
+  /**
+   * Paredes entre la cámara y la habitación se vuelven translúcidas.
+   * Corre en cada frame: solo aritmética escalar, y los materiales se tocan
+   * únicamente cuando el estado desvanecido/opaco de una pared cambia.
+   */
   private fadeWallsTowardCamera(): void {
     const center = this.roomCenter()
+    let changed = false
     for (const [wall, group] of this.wallGroups) {
-      const materials = group.userData.wallMaterials as THREE.MeshStandardMaterial[]
-      const mid = new THREE.Vector3(
-        (wall.start.x + wall.end.x) / 2,
-        wall.height / 2,
-        (wall.start.y + wall.end.y) / 2,
-      )
+      const midX = (wall.start.x + wall.end.x) / 2
+      const midZ = (wall.start.y + wall.end.y) / 2
       const direction = wall.direction()
-      const outward = new THREE.Vector3(-direction.y, 0, direction.x)
-      if (outward.dot(new THREE.Vector3(mid.x - center.x, 0, mid.z - center.z)) < 0) {
-        outward.negate()
+      let outwardX = -direction.y
+      let outwardZ = direction.x
+      if (outwardX * (midX - center.x) + outwardZ * (midZ - center.z) < 0) {
+        outwardX = -outwardX
+        outwardZ = -outwardZ
       }
-      const toCamera = new THREE.Vector3().subVectors(this.camera.position, mid).setY(0).normalize()
-      const facing = outward.dot(toCamera)
+      const toCameraX = this.camera.position.x - midX
+      const toCameraZ = this.camera.position.z - midZ
+      const length = Math.hypot(toCameraX, toCameraZ) || 1
+      const facing = (outwardX * toCameraX + outwardZ * toCameraZ) / length
       const faded = facing > 0.25
+      if (faded === this.fadedWalls.has(wall)) continue
+
+      changed = true
+      if (faded) this.fadedWalls.add(wall)
+      else this.fadedWalls.delete(wall)
+      const materials = group.userData.wallMaterials as THREE.MeshStandardMaterial[]
       for (const material of materials) {
         material.opacity = faded ? 0.13 : 1
         material.depthWrite = !faded
       }
-      if (faded) this.fadedWalls.add(wall)
-      else this.fadedWalls.delete(wall)
       group.traverse((obj) => {
         if (obj instanceof THREE.Mesh && materials.includes(obj.material as THREE.MeshStandardMaterial)) {
           obj.castShadow = !faded
         }
       })
     }
+    if (changed) this.renderer.shadowMap.needsUpdate = true
   }
 
   // ── Sol y ambiente ───────────────────────────────────────────────────────
@@ -329,6 +466,7 @@ export class View3D {
     dom.addEventListener('pointerdown', (e) => this.onDown(e))
     dom.addEventListener('pointermove', (e) => this.onMove(e))
     dom.addEventListener('pointerup', (e) => this.onUp(e))
+    dom.addEventListener('wheel', (e) => this.onWheel(e), { passive: false })
   }
 
   private onDown(event: PointerEvent): void {
@@ -340,6 +478,14 @@ export class View3D {
     if (pick && (pick.type === 'furniture' || pick.type === 'opening' || pick.type === 'light')) {
       this.controls.enabled = false
       this.beginDrag(pick, event)
+    } else if (this.selection?.type === 'furniture') {
+      // Arrastrar fuera del mueble seleccionado lo gira (la cámara no orbita).
+      this.rotateDrag = {
+        furniture: this.selection.furniture,
+        startRotation: this.selection.furniture.rotationY,
+        startX: event.clientX,
+        moved: false,
+      }
     }
   }
 
@@ -352,13 +498,17 @@ export class View3D {
       this.updateDrag(event)
       return
     }
+    if (this.rotateDrag) {
+      this.updateRotateDrag(event)
+      return
+    }
     const pick = this.pickAt(event)
     const selectable =
       pick && (pick.type === 'furniture' || pick.type === 'opening' || pick.type === 'light')
         ? pick
         : null
     if (!sameSelectable(selectable, this.hovered)) {
-      if (this.hovered) {
+      if (this.hovered && this.hovered.type !== 'furniture') {
         const group = this.groupFor(this.hovered)
         if (group) tintGroup(group, 0x000000, 0)
       }
@@ -366,6 +516,39 @@ export class View3D {
       this.applyHighlights()
     }
     this.renderer.domElement.style.cursor = selectable ? 'pointer' : 'default'
+  }
+
+  /** Giro suave con el ratón; con Shift, saltos de 45°. */
+  private updateRotateDrag(event: PointerEvent): void {
+    const drag = this.rotateDrag!
+    const dx = event.clientX - drag.startX
+    if (!drag.moved && Math.abs(dx) < 5) return
+    drag.moved = true
+    const furniture = drag.furniture
+    let target = drag.startRotation + dx * 0.012
+    if (event.shiftKey) target = Math.round(target / (Math.PI / 4)) * (Math.PI / 4)
+    if (
+      fitsInRoom(this.project.floorPlan, furniture.item, furniture.position.x, furniture.position.z, target)
+    ) {
+      this.project.rotateFurniture(furniture, target)
+    }
+  }
+
+  /** Rueda con mueble seleccionado: girar (fino; con Shift, saltos de 45°). */
+  private onWheel(event: WheelEvent): void {
+    if (this.placement || this.selection?.type !== 'furniture') return
+    event.preventDefault()
+    const furniture = this.selection.furniture
+    const step = event.shiftKey ? Math.PI / 4 : Math.PI / 12
+    let target = furniture.rotationY + (event.deltaY > 0 ? step : -step)
+    if (event.shiftKey) target = Math.round(target / (Math.PI / 4)) * (Math.PI / 4)
+    if (
+      !fitsInRoom(this.project.floorPlan, furniture.item, furniture.position.x, furniture.position.z, target)
+    ) {
+      this.deps.onHint('No se puede girar ahí: chocaría con la pared.')
+      return
+    }
+    this.deps.stack.execute(new RotateFurnitureCommand(this.project, furniture, target))
   }
 
   private onUp(event: PointerEvent): void {
@@ -385,9 +568,24 @@ export class View3D {
       this.controls.enabled = true
       if (drag.moved) this.commitDrag(drag)
       else this.select(drag.pick)
-      this.dragInvalid = false
-      this.dirty = true
+      this.setDragInvalid(false)
       return
+    }
+
+    if (this.rotateDrag) {
+      const drag = this.rotateDrag
+      this.rotateDrag = null
+      if (drag.moved) {
+        const final = drag.furniture.rotationY
+        if (final !== drag.startRotation) {
+          this.project.rotateFurniture(drag.furniture, drag.startRotation)
+          this.deps.stack.execute(
+            new RotateFurnitureCommand(this.project, drag.furniture, final),
+          )
+        }
+        return
+      }
+      // Sin giro real: el gesto fue un clic y cae a la deselección de abajo.
     }
 
     if (wasClick) {
@@ -399,9 +597,30 @@ export class View3D {
   // ── Selección ────────────────────────────────────────────────────────────
 
   private select(selection: Selectable | null): void {
+    if (this.selection && this.selection.type !== 'furniture') {
+      const group = this.groupFor(this.selection)
+      if (group) tintGroup(group, 0x000000, 0)
+    }
     this.selection = selection
-    this.dirty = true
+    // Con un mueble seleccionado, arrastrar y la rueda giran el mueble, no la
+    // cámara: se desactivan órbita y zoom hasta deseleccionar.
+    const rotatable = selection?.type === 'furniture'
+    this.controls.enableRotate = !rotatable
+    this.controls.enableZoom = !rotatable
+    this.applyHighlights()
     this.deps.onSelectionChange(selection)
+  }
+
+  /** Deselección iniciada desde fuera (Esc, eliminar, cambio de proyecto). */
+  clearSelection(): void {
+    if (this.selection) this.select(null)
+  }
+
+  /** El tinte de arrastre inválido se re-aplica solo cuando cambia de estado. */
+  private setDragInvalid(invalid: boolean): void {
+    if (this.dragInvalid === invalid) return
+    this.dragInvalid = invalid
+    this.applyHighlights()
   }
 
   // ── Arrastre ─────────────────────────────────────────────────────────────
@@ -436,22 +655,20 @@ export class View3D {
       const targetZ = hit.z - drag.grab!.dz
       const f = pick.furniture
       if (fitsInRoom(this.project.floorPlan, f.item, targetX, targetZ, f.rotationY)) {
-        this.dragInvalid = false
+        this.setDragInvalid(false)
         this.project.moveFurniture(f, targetX, targetZ)
       } else {
-        this.dragInvalid = true
-        this.dirty = true
+        this.setDragInvalid(true)
       }
     } else if (pick.type === 'opening') {
       const point = this.intersectWallPlane(event, pick.wall)
       if (!point) return
       const offset = slideOffset(pick.wall, pick.opening, point)
       if (pick.wall.canPlaceOpening(pick.opening, offset)) {
-        this.dragInvalid = false
+        this.setDragInvalid(false)
         this.project.moveOpening(pick.wall, pick.opening, offset)
       } else {
-        this.dragInvalid = true
-        this.dirty = true
+        this.setDragInvalid(true)
       }
     } else {
       const light = pick.light
@@ -497,9 +714,28 @@ export class View3D {
 
   // ── Colocación (modo fantasma) ───────────────────────────────────────────
 
+  /**
+   * Vacía el grupo fantasma liberando la geometría transitoria; el fantasma
+   * de mueble cacheado solo se desengancha (se reutiliza entre movimientos).
+   */
+  private clearGhost(): void {
+    for (const child of [...this.ghostGroup.children]) {
+      this.ghostGroup.remove(child)
+      if (child !== this.furnitureGhost?.group) disposeGroup(child)
+    }
+  }
+
+  private ghostFor(item: CatalogItem): THREE.Group {
+    if (this.furnitureGhost?.item !== item) {
+      if (this.furnitureGhost) disposeGroup(this.furnitureGhost.group)
+      this.furnitureGhost = { item, group: buildGhost(item) }
+    }
+    return this.furnitureGhost.group
+  }
+
   private updatePlacementGhost(event: PointerEvent): void {
     const placement = this.placement!
-    this.ghostGroup.clear()
+    this.clearGhost()
     this.placementValid = false
     this.placementPoint = null
     this.placementWallHit = null
@@ -510,7 +746,9 @@ export class View3D {
       const support = surfaceAt(this.project, hit.x, hit.z)
       const y = support ? support.topY() : 0
       const inside = fitsInRoom(this.project.floorPlan, placement.item, hit.x, hit.z, 0)
-      const ghost = buildGhost(placement.item, inside)
+      const ghost = this.ghostFor(placement.item)
+      const material = ghost.userData.ghostMaterial as THREE.MeshStandardMaterial
+      material.color.setHex(inside ? 0x2e7d32 : 0xc0392b)
       ghost.position.set(hit.x, y + placement.item.height / 2, hit.z)
       this.ghostGroup.add(ghost)
       this.placementValid = inside
@@ -714,7 +952,7 @@ function sameSelectable(a: Selectable | null, b: Selectable | null): boolean {
   return false
 }
 
-function disposeGroup(group: THREE.Group): void {
+function disposeGroup(group: THREE.Object3D): void {
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
       obj.geometry.dispose()
