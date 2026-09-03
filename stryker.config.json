@@ -4,6 +4,7 @@
   "mutate": [
     "src/core/**/*.ts",
     "src/app/**/*.ts",
+    "pipeline/core/**/*.ts",
     "!src/app/importers/**",
     "!src/core/util/id.ts"
   ],

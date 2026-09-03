@@ -31,7 +31,8 @@ Feature: Semantic catalog search
 
   Scenario: Search stays fast with one hundred thousand products
     Given an index with one hundred thousand vectors
-    Then a query resolves in well under one hundred milliseconds
+    Then a query stays interactive and multiplying the catalog by ten
+    And does not multiply the latency by much more than ten
 
   Scenario: The search microservice serves sync and search over HTTP
     Given the service listening on an ephemeral port

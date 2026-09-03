@@ -53,6 +53,29 @@ feature('Catalog ingestion and mesh generation pipeline', () => {
     expect(p!.id).toBe('silla-tento')
   })
 
+  scenario('A lamp page with diameter in the spec table yields width and depth', () => {
+    const lampHtml = `
+<html><head>
+<script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "Lámpara de techo Benavid",
+  "image": ["https://cdn.example.com/benavid.jpg"],
+  "offers": {"@type": "Offer", "price": "119", "priceCurrency": "EUR"},
+  "additionalProperty": [
+    {"@type": "QuantitativeValue", "name": "Alto", "value": "142", "unitCode": "cm"}
+  ]
+}</script>
+</head><body>
+<label class="c-table-specs__cell  c-table-specs__cell--spec">Diámetro:</label><span>Ø75 cm </span>
+</body></html>`
+    const p = extractJsonLdProduct(lampHtml, 'https://example.com/lampara-benavid.html', 'sklum')
+    expect(p).not.toBeNull()
+    expect(p!.heightCm).toBeCloseTo(142)
+    expect(p!.widthCm).toBeCloseTo(75)
+    expect(p!.depthCm).toBeCloseTo(75)
+  })
+
   scenario('Scraped assets are laid out like a bucket', async () => {
     const root = mkdtempSync(join(tmpdir(), 'bucket-'))
     const store = new LocalFolderAssetStore(root)

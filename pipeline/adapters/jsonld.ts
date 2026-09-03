@@ -87,6 +87,23 @@ export function extractJsonLdProduct(
       product.widthCm ??= diameter
       product.depthCm ??= diameter
     }
+
+    // Fallback: tabla de especificaciones del HTML. Las lámparas de Sklum solo
+    // publican el alto en JSON-LD; el diámetro va en la tabla de la página.
+    for (const m of html.matchAll(
+      /(diámetro|diametro|ancho|anchura|fondo|profundidad|largo|alto|altura)\s*:?\s*<\/label>\s*<span>\s*Ø?\s*(\d+(?:[.,]\d+)?)\s*cm/gi,
+    )) {
+      const key = m[1]!.toLowerCase()
+      const value = Number(m[2]!.replace(',', '.'))
+      if (!Number.isFinite(value)) continue
+      if (key === 'diámetro' || key === 'diametro') {
+        product.widthCm ??= value
+        product.depthCm ??= value
+      } else {
+        const alias = DIMENSION_ALIASES[key]
+        if (alias) product[alias] ??= value
+      }
+    }
     return product
   }
   return null
