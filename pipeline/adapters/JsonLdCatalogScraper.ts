@@ -57,6 +57,9 @@ export class JsonLdCatalogScraper implements CatalogScraper {
           await sleep(this.delayMs)
         } catch (error) {
           console.warn(`[scraper] producto fallido ${url}: ${String(error)}`)
+          // Cortesía también al fallar: si el sitio devuelve errores (429,
+          // caída), es exactamente cuando NO hay que martillearlo.
+          await sleep(this.delayMs * 2)
         }
       }
     }

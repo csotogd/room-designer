@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import type { AssetStore, ScrapedProduct } from '../core/types'
 
@@ -15,15 +15,28 @@ export class LocalFolderAssetStore implements AssetStore {
   async saveProducts(site: string, products: ScrapedProduct[]): Promise<void> {
     const path = this.absolute(join(site, 'products.json'))
     await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, JSON.stringify(products, null, 2))
+    // Escritura atómica: un proceso caído a medias nunca deja el catálogo
+    // (la única fuente de verdad del bucket) corrupto.
+    const tmp = `${path}.tmp`
+    await writeFile(tmp, JSON.stringify(products, null, 2))
+    await rename(tmp, path)
   }
 
   async readProducts(site: string): Promise<ScrapedProduct[]> {
+    let raw: string
     try {
-      const raw = await readFile(this.absolute(join(site, 'products.json')), 'utf8')
-      return JSON.parse(raw) as ScrapedProduct[]
+      raw = await readFile(this.absolute(join(site, 'products.json')), 'utf8')
     } catch {
-      return []
+      return [] // sin catálogo todavía: bucket recién creado
+    }
+    // JSON corrupto NO se traga: devolver [] aquí haría que la siguiente
+    // ingesta reescribiera el catálogo desde cero (pérdida total silenciosa).
+    try {
+      return JSON.parse(raw) as ScrapedProduct[]
+    } catch (error) {
+      throw new Error(
+        `products.json de "${site}" corrupto (${String(error)}); revísalo o restáuralo antes de continuar`,
+      )
     }
   }
 

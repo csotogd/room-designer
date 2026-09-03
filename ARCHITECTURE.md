@@ -79,3 +79,23 @@ gRPC "puro" no funciona desde un navegador (HTTP/2 frames). Dos opciones:
    el front no cambia.
 5. Autenticación (token en interceptor de Connect) y `ListProjects` para el
    "mis diseños" del usuario.
+
+## Búsqueda semántica y orquestación del refresco
+
+El buscador del catálogo es un microservicio propio
+([`services/search`](services/search/README.md)): un embedding por producto
+(packshot + descripción + precio), sync diario idempotente por hash de
+contenido (altas, cambios y bajas en una sola instantánea) y evaluación de
+calidad (Recall/MRR/NDCG contra golden set + señales online en `/metrics`).
+Hoy habla HTTP/JSON; cuando el front migre a Connect, `SearchService.Search`
+debe entrar en `proto/roomdesigner/v1` como un servicio más.
+
+**Orquestación: una sola vía canónica.** El refresco diario
+(ingesta → generación → juez → publicación → sync de embeddings → puerta de
+consistencia → evaluación) se orquesta en GCP con Cloud Scheduler + Cloud Run
+Jobs + Pub/Sub (Terraform en [`infra/gcp`](infra/gcp)); el sync y la
+verificación son pasos CLI idempotentes (`npm run search:sync [-- --verify]`)
+pensados para ser un job más de esa cadena. El DAG de Airflow en
+[`deploy/airflow`](deploy/airflow/catalog_refresh_dag.py) expresa el mismo
+grafo y sirve de referencia (o de implementación si algún día se opera
+Composer), pero **no** es una segunda vía a mantener en paralelo.

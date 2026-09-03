@@ -23,12 +23,23 @@ const products = await store.readProducts(siteId)
 
 const manual = args.get('set')
 if (manual) {
-  const [id, status] = manual.split('=') as [string, 'approved' | 'rejected']
-  const product = products.find((p) => p.id === id || p.id.startsWith(id))
-  if (!product) {
-    console.error(`Producto no encontrado: ${id}`)
+  const separator = manual.indexOf('=')
+  const id = separator < 0 ? manual : manual.slice(0, separator)
+  const status = separator < 0 ? '' : manual.slice(separator + 1)
+  if (status !== 'approved' && status !== 'rejected') {
+    console.error(`Veredicto inválido "${status}": usa --set <productId>=approved|rejected`)
     process.exit(1)
   }
+  const matches = products.filter((p) => p.id === id || p.id.startsWith(id))
+  if (matches.length !== 1) {
+    console.error(
+      matches.length === 0
+        ? `Producto no encontrado: ${id}`
+        : `Prefijo ambiguo "${id}": coincide con ${matches.map((p) => p.id).join(', ')}`,
+    )
+    process.exit(1)
+  }
+  const product = matches[0]!
   product.quality = { status, reason: args.get('reason') ?? 'veredicto manual', judge: 'manual' }
   await store.saveProducts(siteId, products)
   console.log(`[${status}] ${product.id}`)
@@ -36,18 +47,28 @@ if (manual) {
 }
 
 const judge = judgeFromEnv()
-const targets = products.filter((p) => p.modelPath)
+// Solo modelos sin veredicto (idempotente y sin re-pagar VLM); --all re-juzga.
+const rejudge = process.argv.includes('--all')
+const targets = products.filter((p) => p.modelPath && (rejudge || !p.quality))
 console.log(`Juzgando ${targets.length} modelos con ${judge.name}…`)
+let failures = 0
 for (const product of targets) {
-  product.quality = await judge.judge({
-    product,
-    packshotPath: product.generationImagePath
-      ? store.absolute(product.generationImagePath)
-      : undefined,
-    previewPath: product.previewPath ? store.absolute(product.previewPath) : undefined,
-    modelPath: store.absolute(product.modelPath!),
-  })
-  console.log(`[${product.quality.status}] ${product.id.slice(0, 55)} · ${product.quality.reason ?? ''}`)
+  try {
+    product.quality = await judge.judge({
+      product,
+      packshotPath: product.generationImagePath
+        ? store.absolute(product.generationImagePath)
+        : undefined,
+      previewPath: product.previewPath ? store.absolute(product.previewPath) : undefined,
+      modelPath: store.absolute(product.modelPath!),
+    })
+    // Checkpoint tras cada veredicto: un fallo a mitad no pierde los previos.
+    await store.saveProducts(siteId, products)
+    console.log(`[${product.quality.status}] ${product.id.slice(0, 55)} · ${product.quality.reason ?? ''}`)
+  } catch (error) {
+    failures++
+    console.warn(`[judge-err] ${product.id.slice(0, 55)}: ${String(error)}`)
+  }
 }
-await store.saveProducts(siteId, products)
-process.exit(0)
+if (failures > 0) console.warn(`${failures} productos sin veredicto por errores; re-ejecuta para reintentarlos`)
+process.exit(failures > 0 ? 1 : 0)
