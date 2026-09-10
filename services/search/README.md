@@ -86,7 +86,7 @@ lifestyle: el fondo contaminaría el vector. Patrones aplicados:
 |---|---|---|
 | `PORT` | `8787` | puerto de escucha |
 | `SEARCH_DATA_DIR` | `data/search-index` | carpeta persistente del índice |
-| `EMBEDDINGS_PROVIDER` | `hashing` | `hashing` (local, determinista) o `jina` (multimodal foto+texto) |
+| `EMBEDDINGS_PROVIDER` | `hybrid` | `hybrid` (multimodal LOCAL por defecto: bloque léxico + bloque CLIP ViT-B/32 sobre ONNX concatenados con pesos — sin clave, ~90 MB de modelo cacheado tras la 1ª vez; medido en el golden set: iguala al léxico en MRR y lo supera en NDCG, con la foto en el vector), `clip` (solo CLIP, experimentos), `jina` (multimodal cloud) o `hashing` (léxico determinista: tests/CI). `SEARCH_HYBRID_LEX_WEIGHT` (0.6) ajusta la mezcla. |
 | `JINA_API_KEY` | — | obligatoria con `EMBEDDINGS_PROVIDER=jina` |
 | `SEARCH_SYNC_TOKEN` | — | si se define, `POST /sync` exige `Authorization: Bearer` |
 | `LOG_LEVEL` | `info` | nivel de logs |

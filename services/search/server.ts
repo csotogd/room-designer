@@ -20,7 +20,9 @@
  * Config por entorno:
  *   PORT                (8787)     puerto de escucha
  *   SEARCH_DATA_DIR     (data/search-index) carpeta persistente del índice
- *   EMBEDDINGS_PROVIDER (hashing)  'hashing' local o 'jina' multimodal cloud
+ *   EMBEDDINGS_PROVIDER (hybrid)   'hybrid' léxico+CLIP multimodal local
+ *                                  (ONNX, sin clave), 'clip' solo CLIP,
+ *                                  'jina' multimodal cloud, 'hashing' léxico
  *   JINA_API_KEY                   obligatoria con EMBEDDINGS_PROVIDER=jina
  *   SEARCH_SYNC_TOKEN              si se define, POST /sync exige Bearer token
  *   LOG_LEVEL           (info)     debug | info | warn | error
@@ -29,7 +31,9 @@ import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { FileSnapshotStore, defaultDataDir } from './adapters/FileSnapshotStore'
 import { HashingEmbedder } from './adapters/HashingEmbedder'
+import { HybridLocalEmbedder } from './adapters/HybridLocalEmbedder'
 import { JinaClipEmbedder } from './adapters/JinaClipEmbedder'
+import { LocalClipEmbedder } from './adapters/LocalClipEmbedder'
 import { Logger, NULL_LOGGER } from './core/logger'
 import { Metrics } from './core/metrics'
 import { SearchIndexService } from './core/SearchIndexService'
@@ -38,12 +42,19 @@ import type { Embedder, SearchProduct } from './core/types'
 const SERVICE_VERSION = '1.0.0'
 
 function embedderFromEnv(): Embedder {
-  if (process.env.EMBEDDINGS_PROVIDER === 'jina') {
+  const provider = process.env.EMBEDDINGS_PROVIDER ?? 'hybrid'
+  if (provider === 'jina') {
     const key = process.env.JINA_API_KEY
     if (!key) throw new Error('EMBEDDINGS_PROVIDER=jina requiere JINA_API_KEY')
     return new JinaClipEmbedder(key)
   }
-  return new HashingEmbedder()
+  // 'hashing': léxico determinista (tests, CI, máquinas sin espacio de modelo).
+  if (provider === 'hashing') return new HashingEmbedder()
+  // 'clip': solo CLIP, para experimentos (texto-texto fino flojea).
+  if (provider === 'clip') return new LocalClipEmbedder()
+  // Por defecto, multimodal también en local: híbrido léxico+CLIP (foto
+  // incluida), tuneado contra el golden set. Sin API key.
+  return new HybridLocalEmbedder()
 }
 
 export interface SearchServer {

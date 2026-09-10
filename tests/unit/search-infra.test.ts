@@ -2,7 +2,9 @@ import { describe, expect, test, vi, afterEach } from 'vitest'
 import { SearchClient, rankLocally } from '../../src/app/search/SearchClient'
 import { syncSearchIndex, toSearchProducts } from '../../pipeline/core/searchSync'
 import { HashingEmbedder } from '../../services/search/adapters/HashingEmbedder'
+import { HybridLocalEmbedder } from '../../services/search/adapters/HybridLocalEmbedder'
 import { evaluateHits } from '../../services/search/core/evaluation'
+import type { Embedder } from '../../services/search/core/types'
 import { Logger } from '../../services/search/core/logger'
 import { Metrics } from '../../services/search/core/metrics'
 import { VectorIndex } from '../../services/search/core/VectorIndex'
@@ -199,5 +201,42 @@ describe('Sync del pipeline contra el servicio', () => {
     } finally {
       await server.close()
     }
+  })
+})
+describe('HybridLocalEmbedder: fusión por bloques', () => {
+  // Torres falsas: vectores fijos para verificar la matemática sin modelo.
+  const fake = (dim: number, vec: (p: string) => number[]): Embedder => ({
+    version: `fake-${dim}`,
+    dim,
+    embedProducts: (ps) => Promise.resolve(ps.map((p) => Float32Array.from(vec(p.name)))),
+    embedQuery: (q) => Promise.resolve(Float32Array.from(vec(q))),
+  })
+
+  test('el coseno del concatenado es la mezcla convexa de los cosenos por bloque', async () => {
+    // Bloque léxico: "a" ⊥ "b"; bloque clip: "a" ∥ "b" (cos 1).
+    const lexical = fake(2, (t) => (t === 'a' ? [1, 0] : [0, 1]))
+    const clip = fake(2, () => [1, 0])
+    const w = 0.6
+    const hybrid = new HybridLocalEmbedder(w, lexical, clip)
+    expect(hybrid.dim).toBe(4)
+
+    const [va] = await hybrid.embedProducts([
+      { id: 'x', name: 'b', description: '', price: 0 },
+    ])
+    const q = await hybrid.embedQuery('a')
+    // cos_lex(a,b)=0, cos_clip=1 → score esperado = w·0 + (1-w)·1 = 0.4
+    let dot = 0
+    for (let i = 0; i < q.length; i++) dot += q[i]! * va![i]!
+    expect(dot).toBeCloseTo(1 - w, 5)
+  })
+
+  test('con bloques idénticos el score es 1 (los pesos suman la unidad)', async () => {
+    const same = fake(3, () => [1, 2, 3])
+    const hybrid = new HybridLocalEmbedder(0.7, same, same)
+    const [v] = await hybrid.embedProducts([{ id: 'x', name: 'x', description: '', price: 0 }])
+    const q = await hybrid.embedQuery('x')
+    let dot = 0
+    for (let i = 0; i < q.length; i++) dot += q[i]! * v![i]!
+    expect(dot).toBeCloseTo(1, 5)
   })
 })
