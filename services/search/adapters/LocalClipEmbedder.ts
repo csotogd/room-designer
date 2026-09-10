@@ -49,7 +49,9 @@ export class LocalClipEmbedder implements Embedder {
 
   async embedQuery(query: string): Promise<Float32Array> {
     const backend = await this.load()
-    return unit(await backend.embedText(query))
+    // Plantilla zero-shot clásica de CLIP: sin ella, una palabra suelta
+    // ("bed") cae en la zona degenerada del encoder y devuelve ruido.
+    return unit(await backend.embedText(`a photo of ${query}, furniture product`))
   }
 
   /** Foto ilegible ≠ producto sin indexar: se degrada a solo-texto con aviso. */

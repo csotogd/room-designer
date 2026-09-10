@@ -48,11 +48,16 @@
     },
     {
       "query": "rocking chair",
-      "relevant": ["polyhaven-Rockingchair_01"]
+      "relevant": [
+        "polyhaven-Rockingchair_01"
+      ]
     },
     {
       "query": "bookshelf",
-      "relevant": ["polyhaven-wooden_bookshelf_worn", "polyhaven-Shelf_01"]
+      "relevant": [
+        "polyhaven-wooden_bookshelf_worn",
+        "polyhaven-Shelf_01"
+      ]
     },
     {
       "query": "vintage bed frame",
@@ -60,6 +65,46 @@
         "polyhaven-old_bed_frame",
         "polyhaven-vintage_day_bed",
         "polyhaven-GothicBed_01"
+      ]
+    },
+    {
+      "query": "bed",
+      "relevant": [
+        "polyhaven-GothicBed_01",
+        "polyhaven-old_bed_frame",
+        "polyhaven-vintage_day_bed"
+      ]
+    },
+    {
+      "query": "chair",
+      "relevant": [
+        "polyhaven-ArmChair_01",
+        "polyhaven-WoodenChair_01",
+        "polyhaven-GreenChair_01",
+        "polyhaven-SchoolChair_01",
+        "polyhaven-Rockingchair_01",
+        "polyhaven-dining_chair_02",
+        "polyhaven-bar_chair_round_01",
+        "polyhaven-chinese_armchair"
+      ]
+    },
+    {
+      "query": "lamp",
+      "relevant": [
+        "polyhaven-desk_lamp_arm_01",
+        "polyhaven-modern_ceiling_lamp_01",
+        "polyhaven-hanging_industrial_lamp",
+        "polyhaven-vintage_oil_lamp",
+        "polyhaven-industrial_pipe_lamp",
+        "polyhaven-industrial_wall_lamp",
+        "polyhaven-street_lamp_01",
+        "polyhaven-street_lamp_02"
+      ]
+    },
+    {
+      "query": "frying pan",
+      "relevant": [
+        "polyhaven-brass_pan_01"
       ]
     }
   ]

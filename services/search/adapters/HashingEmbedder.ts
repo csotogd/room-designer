@@ -6,37 +6,48 @@ import type { Embedder, SearchProduct } from '../core/types'
  * desarrollo local, tests y como degradado si no hay proveedor configurado:
  * la similitud que captura es léxica, no semántica profunda, pero misma
  * entrada → mismo vector siempre (clave para la idempotencia del sync).
+ *
+ * v2: 1024 dims (con 256, las colisiones de hash dominaban el coseno de las
+ * queries cortas: "bed" devolvía sartenes) y el NOMBRE pesa ×3 sobre la
+ * descripción — es donde vive la identidad del producto; una descripción
+ * larga ya no lo diluye.
+ * v3: mezcla avalanche sobre FNV antes del módulo. FNV-1a dispersa mal los
+ * bits bajos en strings cortos y el módulo potencia-de-2 solo mira esos
+ * bits: "bed" y "pan" caían en el MISMO bucket (y "#bed" en el de "#pan").
  */
 export class HashingEmbedder implements Embedder {
-  readonly version = 'hashing-v1'
+  readonly version = 'hashing-v3'
   readonly dim: number
 
-  constructor(dim = 256) {
+  constructor(dim = 1024) {
     this.dim = dim
   }
 
+  private static readonly NAME_WEIGHT = 3
+
   embedProducts(products: readonly SearchProduct[]): Promise<Float32Array[]> {
     return Promise.resolve(
-      products.map((product) =>
-        this.embedText(
-          `${product.name} ${product.description} ${priceBucket(product.price)}`,
-        ),
-      ),
+      products.map((product) => {
+        const vector = new Float32Array(this.dim)
+        this.addText(vector, product.name, HashingEmbedder.NAME_WEIGHT)
+        this.addText(vector, `${product.description} ${priceBucket(product.price)}`, 1)
+        return vector
+      }),
     )
   }
 
   embedQuery(query: string): Promise<Float32Array> {
-    return Promise.resolve(this.embedText(query))
+    const vector = new Float32Array(this.dim)
+    this.addText(vector, query, 1)
+    return Promise.resolve(vector)
   }
 
-  private embedText(text: string): Float32Array {
-    const vector = new Float32Array(this.dim)
+  private addText(vector: Float32Array, text: string, weight: number): void {
     for (const token of tokensOf(text)) {
-      const bucket = fnv1a(token) % this.dim
-      const sign = fnv1a(`s${token}`) % 2 === 0 ? 1 : -1
-      vector[bucket] = (vector[bucket] ?? 0) + sign
+      const bucket = mixedHash(token) % this.dim
+      const sign = mixedHash(`s${token}`) % 2 === 0 ? 1 : -1
+      vector[bucket] = (vector[bucket] ?? 0) + sign * weight
     }
-    return vector
   }
 }
 
@@ -67,4 +78,15 @@ function fnv1a(text: string): number {
     hash = Math.imul(hash, 0x01000193) >>> 0
   }
   return hash
+}
+
+/** FNV + finalizador avalanche de Murmur3: reparte la entropía a TODOS los bits. */
+function mixedHash(text: string): number {
+  let h = fnv1a(text)
+  h ^= h >>> 16
+  h = Math.imul(h, 0x85ebca6b) >>> 0
+  h ^= h >>> 13
+  h = Math.imul(h, 0xc2b2ae35) >>> 0
+  h ^= h >>> 16
+  return h >>> 0
 }
