@@ -80,6 +80,21 @@ gRPC "puro" no funciona desde un navegador (HTTP/2 frames). Dos opciones:
 5. Autenticación (token en interceptor de Connect) y `ListProjects` para el
    "mis diseños" del usuario.
 
+## Catálogos múltiples (CATALOG_SITE)
+
+El pipeline soporta fuentes de dos naturalezas bajo el mismo contrato
+(`CatalogScraper` → `AssetStore` → publicación): tiendas scrapeadas cuyos
+modelos se **generan** de una foto y pasan por el juez (`sklum`), y
+bibliotecas 3D con licencia abierta cuyos modelos **nativos** se descargan
+tal cual y entran pre-aprobados (`polyhaven` CC0, `sketchfab` CC0/CC-BY con
+atribución `license`/`author`). Cada sitio materializa su bucket
+(`data/catalog/<site>/`), su índice de app (`public/catalog/index-<site>.json`)
+y su instantánea de embeddings (`data/search-index/<site>/`). `CATALOG_SITE`
+selecciona el catálogo activo en pipeline, servicio de búsqueda y front a la
+vez; el resto de catálogos queda construido y listo para conmutar sin
+re-embeber. En cloud, el mismo interruptor es la variable de entorno de los
+workers/Cloud Run (colecciones `catalog_{site}_{country}` ya previstas).
+
 ## Búsqueda semántica y orquestación del refresco
 
 El buscador del catálogo es un microservicio propio

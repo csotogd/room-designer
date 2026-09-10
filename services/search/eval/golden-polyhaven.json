@@ -1,0 +1,66 @@
+{
+  "$comment": "Golden set del catálogo Poly Haven (CC0, descripciones en inglés). Consulta → ids relevantes de public/catalog/index-polyhaven.json. Se evalúa con CATALOG_SITE=polyhaven npm run search:eval.",
+  "cases": [
+    {
+      "query": "sofa",
+      "relevant": [
+        "polyhaven-Sofa_01",
+        "polyhaven-sofa_02",
+        "polyhaven-sofa_03",
+        "polyhaven-chinese_sofa",
+        "polyhaven-painted_wooden_sofa"
+      ]
+    },
+    {
+      "query": "potted plant",
+      "relevant": [
+        "polyhaven-potted_plant_01",
+        "polyhaven-potted_plant_02",
+        "polyhaven-potted_plant_04"
+      ]
+    },
+    {
+      "query": "coffee table",
+      "relevant": [
+        "polyhaven-CoffeeTable_01",
+        "polyhaven-coffee_table_round_01",
+        "polyhaven-modern_coffee_table_01",
+        "polyhaven-modern_coffee_table_02",
+        "polyhaven-industrial_coffee_table"
+      ]
+    },
+    {
+      "query": "chandelier ceiling light",
+      "relevant": [
+        "polyhaven-Chandelier_01",
+        "polyhaven-Chandelier_02",
+        "polyhaven-Chandelier_03",
+        "polyhaven-chinese_chandelier",
+        "polyhaven-lantern_chandelier_01"
+      ]
+    },
+    {
+      "query": "nightstand bedside",
+      "relevant": [
+        "polyhaven-ClassicNightstand_01",
+        "polyhaven-painted_wooden_nightstand"
+      ]
+    },
+    {
+      "query": "rocking chair",
+      "relevant": ["polyhaven-Rockingchair_01"]
+    },
+    {
+      "query": "bookshelf",
+      "relevant": ["polyhaven-wooden_bookshelf_worn", "polyhaven-Shelf_01"]
+    },
+    {
+      "query": "vintage bed frame",
+      "relevant": [
+        "polyhaven-old_bed_frame",
+        "polyhaven-vintage_day_bed",
+        "polyhaven-GothicBed_01"
+      ]
+    }
+  ]
+}

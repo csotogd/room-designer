@@ -52,6 +52,18 @@ export class LocalFolderAssetStore implements AssetStore {
     return this.save(join(site, 'models', `${productId}.glb`), bytes)
   }
 
+  async saveModelPart(
+    site: string,
+    productId: string,
+    relPath: string,
+    bytes: Uint8Array,
+  ): Promise<string> {
+    // Las rutas vienen del manifiesto de la fuente: se normalizan para que
+    // nunca escapen de la carpeta del producto (ni "..", ni absolutas).
+    const safe = relPath.split('/').filter((part) => part && part !== '..').join('/')
+    return this.save(join(site, 'models', productId, safe), bytes)
+  }
+
   async savePreview(site: string, productId: string, bytes: Uint8Array): Promise<string> {
     return this.save(join(site, 'previews', `${productId}.webp`), bytes)
   }

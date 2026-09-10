@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  // CATALOG_SITE llega al front (import.meta.env.CATALOG_SITE): la misma
+  // variable elige catálogo en el pipeline, el servicio de búsqueda y la app.
+  envPrefix: ['VITE_', 'CATALOG_'],
   server: { port: 5173 },
   test: {
     include: ['tests/**/*.test.ts'],

@@ -1,9 +1,17 @@
 import type { SiteConfig } from '../core/types'
 
-/** Configuraciones por sitio del scraper JSON-LD. Añadir sitio = añadir entrada. */
+/**
+ * Registro de fuentes de catálogo. Añadir fuente = añadir entrada.
+ *  - kind 'jsonld':   scraper de tienda (schema.org/Product en JSON-LD).
+ *  - kind 'polyhaven': API pública de Poly Haven — todo CC0, modelos glTF
+ *    reales con dimensiones físicas; no requiere credenciales.
+ *  - kind 'sketchfab': API pública de Sketchfab filtrada a licencias CC0 y
+ *    CC-BY; descargar los GLB exige SKETCHFAB_API_TOKEN (cuenta gratuita).
+ */
 export const SITES: Record<string, SiteConfig> = {
   sklum: {
     id: 'sklum',
+    kind: 'jsonld',
     country: 'es',
     origin: 'https://www.sklum.com',
     categoryUrls: [
@@ -20,4 +28,21 @@ export const SITES: Record<string, SiteConfig> = {
     ],
     productLinkPattern: /^\/es\/comprar-[^"]+\.html$/,
   },
+  polyhaven: {
+    id: 'polyhaven',
+    kind: 'polyhaven',
+    country: 'int',
+    origin: 'https://polyhaven.com',
+  },
+  sketchfab: {
+    id: 'sketchfab',
+    kind: 'sketchfab',
+    country: 'int',
+    origin: 'https://sketchfab.com',
+  },
+}
+
+/** Sitio activo por defecto para CLIs y front: variable de entorno compartida. */
+export function defaultSiteId(env: Record<string, string | undefined> = process.env): string {
+  return env.CATALOG_SITE ?? 'sklum'
 }

@@ -23,13 +23,17 @@ export class JsonLdCatalogScraper implements CatalogScraper {
     // Colas de enlaces por categoría: el límite se reparte en turnos (una de
     // cada categoría por ronda) para que el catálogo salga variado en vez de
     // agotarse en la primera categoría.
+    const { categoryUrls, productLinkPattern } = this.config
+    if (!categoryUrls?.length || !productLinkPattern) {
+      throw new Error(`El sitio "${this.config.id}" no tiene categoryUrls/productLinkPattern (¿kind equivocado?)`)
+    }
     const queues: string[][] = []
-    for (const categoryUrl of this.config.categoryUrls) {
+    for (const categoryUrl of categoryUrls) {
       try {
         queues.push(
           extractProductLinks(
             await this.fetchText(categoryUrl),
-            this.config.productLinkPattern,
+            productLinkPattern,
             this.config.origin,
           ),
         )

@@ -60,5 +60,8 @@ export class FileSnapshotStore implements SnapshotStore {
 }
 
 export function defaultDataDir(): string {
-  return process.env.SEARCH_DATA_DIR ?? join(process.cwd(), 'data', 'search-index')
+  // Un índice por catálogo: cambiar CATALOG_SITE y reiniciar el servicio
+  // restaura la instantánea de ese catálogo, sin re-embeber nada.
+  const site = process.env.CATALOG_SITE ?? 'sklum'
+  return process.env.SEARCH_DATA_DIR ?? join(process.cwd(), 'data', 'search-index', site)
 }

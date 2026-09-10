@@ -17,14 +17,20 @@
  * Entorno: SEARCH_URL, SEARCH_SYNC_TOKEN, CATALOG_PUBLIC_BASE_URL.
  */
 import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { defaultSiteId } from '../adapters/sites'
 import { syncSearchIndex, toSearchProducts } from '../core/searchSync'
 import type { AppCatalogEntry } from '../core/appCatalog'
 
 const verify = process.argv.includes('--verify')
-const indexPath = join('public', 'catalog', 'index.json')
+const siteArg = process.argv.indexOf('--site')
+const siteId = siteArg >= 0 ? process.argv[siteArg + 1]! : defaultSiteId()
+const siteIndex = join('public', 'catalog', `index-${siteId}.json`)
+// Compatibilidad: si el índice por sitio aún no existe, se usa el histórico.
+const indexPath = existsSync(siteIndex) ? siteIndex : join('public', 'catalog', 'index.json')
 const searchUrl = process.env.SEARCH_URL ?? 'http://localhost:8787'
-const runId = `sync-${Date.now().toString(36)}`
+const runId = `sync-${siteId}-${Date.now().toString(36)}`
 
 const entries = JSON.parse(await readFile(indexPath, 'utf8')) as AppCatalogEntry[]
 const products = toSearchProducts(entries, process.env.CATALOG_PUBLIC_BASE_URL)

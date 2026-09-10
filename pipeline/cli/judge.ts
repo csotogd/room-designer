@@ -9,13 +9,14 @@
  *   npm run pipeline:judge -- --site sklum --set <productId>=rejected --reason "geometría rota"
  */
 import { LocalFolderAssetStore } from '../adapters/LocalFolderAssetStore'
+import { defaultSiteId } from '../adapters/sites'
 import { judgeFromEnv } from '../adapters/judges'
 
 const args = new Map<string, string>()
 for (let i = 2; i < process.argv.length; i += 2) {
   args.set(process.argv[i]!.replace(/^--/, ''), process.argv[i + 1] ?? '')
 }
-const siteId = args.get('site') ?? 'sklum'
+const siteId = args.get('site') ?? defaultSiteId()
 const root = args.get('out') ?? 'data/catalog'
 
 const store = new LocalFolderAssetStore(root)

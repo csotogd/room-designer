@@ -54,26 +54,16 @@ with DAG(
     default_args=default_args,
     tags=["catalog", "search"],
 ) as dag:
-    ingest = BashOperator(
-        task_id="ingest",
-        bash_command=f"cd {REPO_DIR} && npm run pipeline:ingest -- --site sklum",
-    )
-
-    generate = BashOperator(
-        task_id="generate",
-        bash_command=f"cd {REPO_DIR} && npm run pipeline:generate -- --site sklum",
-        execution_timeout=timedelta(hours=4),
-    )
-
-    judge = BashOperator(
-        task_id="judge",
-        bash_command=f"cd {REPO_DIR} && npm run pipeline:judge -- --site sklum",
-    )
-
-    publish_catalog = BashOperator(
-        task_id="publish_catalog",
-        bash_command=f"cd {REPO_DIR} && npm run pipeline:link -- --site sklum",
-    )
+    # Un sub-pipeline por catálogo. Las tiendas scrapeadas (jsonld) pasan por
+    # generación 3D + juez; las bibliotecas 3D (polyhaven, sketchfab) traen el
+    # modelo hecho y van directas de ingesta a publicación. El índice de
+    # embeddings solo se sincroniza para el catálogo ACTIVO (CATALOG_SITE en
+    # el entorno de los workers): link/searchSync ya lo respetan por sí solos.
+    SITES = {
+        "sklum": {"generated_3d": True},
+        "polyhaven": {"generated_3d": False},
+        "sketchfab": {"generated_3d": False},  # GLB requiere SKETCHFAB_API_TOKEN
+    }
 
     sync_embeddings = BashOperator(
         task_id="sync_embeddings",
@@ -92,5 +82,32 @@ with DAG(
         bash_command=f"cd {REPO_DIR} && npm run search:eval",
     )
 
-    ingest >> generate >> judge >> publish_catalog >> sync_embeddings >> verify_consistency
-    verify_consistency >> eval_search_quality
+    for site, options in SITES.items():
+        ingest = BashOperator(
+            task_id=f"ingest_{site}",
+            bash_command=f"cd {REPO_DIR} && npm run pipeline:ingest -- --site {site}",
+            execution_timeout=timedelta(hours=4),  # bibliotecas 3D: descarga completa
+        )
+
+        publish_catalog = BashOperator(
+            task_id=f"publish_catalog_{site}",
+            bash_command=f"cd {REPO_DIR} && npm run pipeline:link -- --site {site}",
+        )
+
+        if options["generated_3d"]:
+            generate = BashOperator(
+                task_id=f"generate_{site}",
+                bash_command=f"cd {REPO_DIR} && npm run pipeline:generate -- --site {site}",
+                execution_timeout=timedelta(hours=4),
+            )
+            judge = BashOperator(
+                task_id=f"judge_{site}",
+                bash_command=f"cd {REPO_DIR} && npm run pipeline:judge -- --site {site}",
+            )
+            ingest >> generate >> judge >> publish_catalog
+        else:
+            ingest >> publish_catalog
+
+        publish_catalog >> sync_embeddings
+
+    sync_embeddings >> verify_consistency >> eval_search_quality

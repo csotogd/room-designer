@@ -13,21 +13,42 @@
  *   SEARCH_EVAL_K         (5)   profundidad del corte
  */
 import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { HashingEmbedder } from '../adapters/HashingEmbedder'
+import { HybridLocalEmbedder } from '../adapters/HybridLocalEmbedder'
 import { JinaClipEmbedder } from '../adapters/JinaClipEmbedder'
+import { LocalClipEmbedder } from '../adapters/LocalClipEmbedder'
 import { evaluateSearch, type GoldenCase } from '../core/evaluation'
 import { SearchIndexService } from '../core/SearchIndexService'
 import type { Embedder } from '../core/types'
 
-const catalogPath = process.argv[2] ?? 'public/catalog/index.json'
-const goldenPath = process.argv[3] ?? 'services/search/eval/golden.json'
+// Por defecto se evalúa el catálogo activo (CATALOG_SITE) con su golden set
+// por sitio; sin índice/golden propios, se cae a los ficheros históricos.
+const site = process.env.CATALOG_SITE
+const withFallback = (candidate: string, fallback: string) =>
+  existsSync(candidate) ? candidate : fallback
+const catalogPath =
+  process.argv[2] ??
+  (site
+    ? withFallback(`public/catalog/index-${site}.json`, 'public/catalog/index.json')
+    : 'public/catalog/index.json')
+const goldenPath =
+  process.argv[3] ??
+  (site
+    ? withFallback(`services/search/eval/golden-${site}.json`, 'services/search/eval/golden.json')
+    : 'services/search/eval/golden.json')
 const k = Number(process.env.SEARCH_EVAL_K ?? 5)
 const minMrr = Number(process.env.SEARCH_EVAL_MIN_MRR ?? 0.6)
 
+const provider = process.env.EMBEDDINGS_PROVIDER ?? 'hybrid'
 const embedder: Embedder =
-  process.env.EMBEDDINGS_PROVIDER === 'jina'
+  provider === 'jina'
     ? new JinaClipEmbedder(process.env.JINA_API_KEY ?? '')
-    : new HashingEmbedder()
+    : provider === 'hashing'
+      ? new HashingEmbedder()
+      : provider === 'clip'
+        ? new LocalClipEmbedder()
+        : new HybridLocalEmbedder()
 
 const entries = JSON.parse(await readFile(catalogPath, 'utf8')) as {
   id: string
