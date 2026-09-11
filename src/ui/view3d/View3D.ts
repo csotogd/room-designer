@@ -249,6 +249,17 @@ export class View3D {
   }
 
   /**
+   * Screenshot PNG de la escena para el juez del diseñador. Se renderiza
+   * justo antes de leer el canvas (sin preserveDrawingBuffer el buffer se
+   * vacía tras cada frame).
+   */
+  captureScreenshot(): string {
+    this.flushIfDirty()
+    this.renderer.render(this.scene, this.camera)
+    return this.renderer.domElement.toDataURL('image/png')
+  }
+
+  /**
    * El picking debe ver SIEMPRE la escena al día: si el dominio cambió desde
    * el último frame, reconstruimos antes de lanzar el rayo (no esperamos al
    * siguiente animation frame).

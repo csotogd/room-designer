@@ -94,6 +94,25 @@
           <canvas id="canvas2d"></canvas>
         </div>
 
+        <aside id="chat">
+          <div id="chat-header">
+            <span class="chat-title">Diseñador</span>
+            <span id="chat-status">conectando…</span>
+            <button id="chat-toggle" class="mini-btn" title="Minimizar chat">
+              <svg viewBox="0 0 16 16"><path d="M6 3 L11 8 L6 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div id="chat-messages">
+            <div class="chat-bubble assistant">Dime qué monto: «créame una oficina para 4, moderna».</div>
+          </div>
+          <form id="chat-form">
+            <input id="chat-input" type="text" placeholder="Pide un diseño…" autocomplete="off" />
+            <button type="submit" class="chat-send" title="Enviar">
+              <svg viewBox="0 0 16 16"><path d="M2 8 L14 2 L11 8 L14 14 Z" fill="currentColor"/></svg>
+            </button>
+          </form>
+        </aside>
+
         <div id="inspector" hidden></div>
         <div id="cart-panel" hidden></div>
         <div id="hint"></div>

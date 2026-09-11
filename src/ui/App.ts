@@ -23,8 +23,10 @@ import { View3D, type Placement, type Selectable } from './view3d/View3D'
 import { View2D } from './view2d/View2D'
 import { WallTool } from './view2d/tools/WallTool'
 import { SelectTool } from './view2d/tools/SelectTool'
+import { applyDesignerActions } from '../app/designer/actionApplier'
 import { CatalogPanel } from './panels/CatalogPanel'
 import { CartPanel } from './panels/CartPanel'
+import { ChatPanel } from './panels/ChatPanel'
 import { CreateRoomModal } from './panels/CreateRoomModal'
 import type { ToolContext } from './types'
 
@@ -37,6 +39,7 @@ export class App {
   private view2d: View2D | null = null
   private readonly catalogPanel: CatalogPanel
   private readonly cartPanel: CartPanel
+  private readonly chatPanel: ChatPanel
   private readonly modal: CreateRoomModal
   private readonly repository: ProjectRepository = new LocalStorageProjectRepository(localStorage)
   private selection: Selectable | null = null
@@ -73,6 +76,26 @@ export class App {
       },
     )
     this.cartPanel = new CartPanel(root, this.project)
+    this.chatPanel = new ChatPanel(root, {
+      apply: (actions) => {
+        const report = applyDesignerActions(
+          {
+            project: () => this.project,
+            catalog: this.catalog,
+            stack: this.stack,
+            replaceRoom: (plan, height) => {
+              this.modal.hide()
+              this.setProject(new Project(plan, height))
+            },
+          },
+          actions,
+        )
+        this.refreshUndoButtons()
+        return report
+      },
+      screenshot: () => this.view3d.captureScreenshot(),
+      sceneIsEmpty: () => this.project.furniture.length === 0,
+    })
     this.modal = new CreateRoomModal(root, (plan) => {
       this.setProject(new Project(plan, plan.walls[0]?.height ?? 2.5))
       this.hint('Elige puertas, ventanas, muebles o luces del catálogo y colócalos en la escena.')
