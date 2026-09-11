@@ -9,3 +9,4 @@ public/catalog/
 .env
 coverage/
 data/search-index/
+data/designer/

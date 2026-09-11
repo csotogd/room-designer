@@ -114,3 +114,20 @@ pensados para ser un job más de esa cadena. El DAG de Airflow en
 [`deploy/airflow`](deploy/airflow/catalog_refresh_dag.py) expresa el mismo
 grafo y sirve de referencia (o de implementación si algún día se opera
 Composer), pero **no** es una segunda vía a mantener en paralelo.
+
+## Diseñador conversacional
+
+Tercer microservicio ([`services/designer`](services/designer/README.md)):
+chat → acciones (`setRoom`/`placeNew`/`replace`/`move`/`rotate`/`remove`)
+sobre **un fichero de estado** (muebles con coordenadas 3D + log de cambios,
+escritura atómica). `placeNew` no inventa productos: el LLM elige una query,
+el buscador devuelve top-20 del catálogo real y un **VLM picker** elige por
+foto+precio+descripción; **guardrails geométricos** deterministas validan y
+reparan cada posición (nada fuera, volando, tapando aperturas ni
+colisionando). Un **VLM judge** puntúa screenshots con rubric (cohesión,
+colores, estilo, adherencia); la evidencia se persiste en fichero local o en
+GCS (`SCREENSHOT_BUCKET`) según la vía. El front habla WebSocket y aplica
+las acciones vía CommandStack (un turno = un undo). Proveedores LLM/VLM por
+puerto: Anthropic (`claude-opus-5`) o fakes deterministas para tests/demo.
+La fase actual es "fichero + WS"; la migración cloud cambia persistencia
+(Firestore) y transporte (Connect) sin tocar dominio ni guardrails.
