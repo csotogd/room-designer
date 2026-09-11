@@ -4,7 +4,9 @@
   "mutate": [
     "src/core/**/*.ts",
     "src/app/**/*.ts",
+    "pipeline/core/**/*.ts",
     "!src/app/importers/**",
+    "!src/app/designer/DesignerClient.ts",
     "!src/core/util/id.ts"
   ],
   "vitest": {

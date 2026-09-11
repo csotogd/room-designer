@@ -12,6 +12,7 @@ interface DependentSnapshot {
 /** Borra un mueble recordando cómo estaba apoyado todo, para poder deshacer. */
 export class RemoveFurnitureCommand implements Command {
   private snapshots: DependentSnapshot[] = []
+  private index = -1
 
   constructor(
     private readonly project: Project,
@@ -19,6 +20,9 @@ export class RemoveFurnitureCommand implements Command {
   ) {}
 
   execute(): void {
+    // Si el mueble ya no está, deshacer no debe "resucitarlo" (duplicado).
+    this.index = this.project.furniture.indexOf(this.furniture)
+    if (this.index < 0) return
     this.snapshots = [this.furniture, ...this.project.dependentsOf(this.furniture)].map((f) => ({
       furniture: f,
       position: f.position,
@@ -28,10 +32,12 @@ export class RemoveFurnitureCommand implements Command {
   }
 
   undo(): void {
+    if (this.index < 0) return
     for (const snapshot of this.snapshots) {
       snapshot.furniture.position = snapshot.position
       snapshot.furniture.supportedBy = snapshot.supportedBy
     }
-    this.project.addFurniture(this.furniture)
+    // En su índice original: el orden de la lista es orden de dibujo/carrito.
+    this.project.addFurniture(this.furniture, this.index)
   }
 }

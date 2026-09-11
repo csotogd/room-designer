@@ -1,4 +1,5 @@
 import type { FurnitureCatalog } from '../../app/catalog/FurnitureCatalog'
+import { SearchClient, rankLocally } from '../../app/search/SearchClient'
 import type { FloorFinish, FloorMaterial, WallFinish, WallMaterial } from '../../core/model/Finishes'
 import { productImage } from '../view3d/thumbnails'
 import type { Placement } from '../view3d/View3D'
@@ -9,9 +10,18 @@ const euros = (value: number): string =>
 interface SimpleEntry {
   placement: Placement
   name: string
-  emoji: string
+  icon: string
   detail: string
 }
+
+/** Iconos de línea (SVG estáticos de la casa, sin datos externos). */
+const ICONS = {
+  door: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21 V4.5 A1.5 1.5 0 0 1 7.5 3 h9 A1.5 1.5 0 0 1 18 4.5 V21"/><circle cx="15" cy="12.5" r="1.1" fill="currentColor" stroke="none"/><line x1="3.5" y1="21" x2="20.5" y2="21"/></svg>',
+  window: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="4" y="4.5" width="16" height="15" rx="1.5"/><line x1="12" y1="4.5" x2="12" y2="19.5"/><line x1="4" y1="12" x2="20" y2="12"/></svg>',
+  ceiling: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="7"/><path d="M6 12 a6 6 0 0 1 12 0 Z"/><line x1="12" y1="15.5" x2="12" y2="17.5"/><line x1="8.5" y1="15" x2="7.5" y2="16.8"/><line x1="15.5" y1="15" x2="16.5" y2="16.8"/></svg>',
+  sconce: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="3" x2="5" y2="21"/><path d="M5 12 h5"/><path d="M10 9 h7 l-2 6 h-3 Z"/><line x1="13.5" y1="18" x2="13.5" y2="19.5"/></svg>',
+  floorlamp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 h8 l-1.5 6 h-5 Z"/><line x1="12" y1="9" x2="12" y2="19"/><path d="M8 21 a4 2 0 0 1 8 0 Z"/></svg>',
+} as const
 
 /** Acceso del panel a los acabados del proyecto (App lo cablea con comandos). */
 export interface FinishControls {
@@ -46,22 +56,58 @@ const FLOOR_COLORS = ['#d9c5a3', '#a67c52', '#b1653f', '#b9b4ab', '#e8e2d8', '#5
 export class CatalogPanel {
   private activeTab = 'furniture'
   private activeCard: HTMLElement | null = null
+  private query = ''
+  private ranking: Map<string, number> | null = null
+  private searchTimer = 0
+  private searchSeq = 0
 
   constructor(
     private readonly root: Document,
     private readonly catalog: FurnitureCatalog,
     private readonly onPick: (placement: Placement) => void,
     private readonly finishes: FinishControls,
+    private readonly search: SearchClient = new SearchClient(),
   ) {
     for (const button of root.querySelectorAll<HTMLButtonElement>('#catalog-tabs button')) {
-      button.addEventListener('click', () => {
-        this.activeTab = button.dataset.tab!
-        for (const b of root.querySelectorAll('#catalog-tabs button')) {
-          b.classList.toggle('active', b === button)
-        }
-        this.renderCards()
-      })
+      button.addEventListener('click', () => this.setTab(button.dataset.tab!))
     }
+    this.bindSearch()
+    this.renderCards()
+  }
+
+  private setTab(tab: string): void {
+    this.activeTab = tab
+    for (const b of this.root.querySelectorAll<HTMLButtonElement>('#catalog-tabs button')) {
+      b.classList.toggle('active', b.dataset.tab === tab)
+    }
+    this.renderCards()
+  }
+
+  // ── Búsqueda ─────────────────────────────────────────────────────────────
+
+  private bindSearch(): void {
+    const input = this.root.querySelector<HTMLInputElement>('#catalog-search-input')
+    if (!input) return
+    input.addEventListener('input', () => {
+      window.clearTimeout(this.searchTimer)
+      this.searchTimer = window.setTimeout(() => void this.runSearch(input.value), 200)
+    })
+  }
+
+  private async runSearch(raw: string): Promise<void> {
+    const query = raw.trim()
+    const seq = ++this.searchSeq
+    this.query = query
+    if (!query) {
+      this.ranking = null
+      this.renderCards()
+      return
+    }
+    // La búsqueda es de muebles: al teclear saltamos a esa pestaña.
+    if (this.activeTab !== 'furniture') this.setTab('furniture')
+    const remote = await this.search.rank(query)
+    if (seq !== this.searchSeq) return // llegó tarde: hay una consulta más nueva
+    this.ranking = remote ?? rankLocally(query, this.catalog.items())
     this.renderCards()
   }
 
@@ -159,10 +205,17 @@ export class CatalogPanel {
   private renderProductCards(container: HTMLElement): void {
     // El menú de muebles enseña solo productos de catálogos web (con origen);
     // los locales siguen existiendo para resolver proyectos antiguos.
-    const products = this.catalog.items().filter((p) => p.origin)
+    let products = this.catalog.items().filter((p) => p.origin)
+    if (this.query && this.ranking) {
+      const ranking = this.ranking
+      // Orden estable: los más relevantes arriba; sin score, al final tal cual.
+      products = [...products].sort(
+        (a, b) => (ranking.get(b.id) ?? -Infinity) - (ranking.get(a.id) ?? -Infinity),
+      )
+    }
     if (products.length === 0) {
       const empty = this.root.createElement('div')
-      empty.style.cssText = 'grid-column:1/-1;color:#6e6a63;font-size:12.5px;line-height:1.5;padding:8px'
+      empty.className = 'catalog-empty'
       empty.textContent =
         'Sin productos web todavía: ejecuta la ingesta del pipeline (npm run pipeline:ingest) y publícalos con npm run pipeline:link.'
       container.append(empty)
@@ -197,6 +250,13 @@ export class CatalogPanel {
       card.addEventListener('click', () =>
         this.activate(card, { type: 'furniture', item: product }),
       )
+      // La tarjeta es un div con role=button: sin esto, Enter/Espacio no colocan.
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          this.activate(card, { type: 'furniture', item: product })
+        }
+      })
       container.append(card)
     }
   }
@@ -206,14 +266,14 @@ export class CatalogPanel {
   private simpleEntries(): SimpleEntry[] {
     if (this.activeTab === 'openings') {
       return [
-        { placement: { type: 'opening', kind: 'door' }, name: 'Puerta', emoji: '🚪', detail: '90×200 cm' },
-        { placement: { type: 'opening', kind: 'window' }, name: 'Ventana', emoji: '🪟', detail: '120×110 cm' },
+        { placement: { type: 'opening', kind: 'door' }, name: 'Puerta', icon: ICONS.door, detail: '90×200 cm' },
+        { placement: { type: 'opening', kind: 'window' }, name: 'Ventana', icon: ICONS.window, detail: '120×110 cm' },
       ]
     }
     return [
-      { placement: { type: 'light', kind: 'ceiling' }, name: 'Plafón de techo', emoji: '💡', detail: '59 €' },
-      { placement: { type: 'light', kind: 'wall' }, name: 'Aplique', emoji: '🔆', detail: '39 €' },
-      { placement: { type: 'light', kind: 'floor' }, name: 'Lámpara de pie', emoji: '🕯️', detail: '79 €' },
+      { placement: { type: 'light', kind: 'ceiling' }, name: 'Plafón de techo', icon: ICONS.ceiling, detail: '59 €' },
+      { placement: { type: 'light', kind: 'wall' }, name: 'Aplique', icon: ICONS.sconce, detail: '39 €' },
+      { placement: { type: 'light', kind: 'floor' }, name: 'Lámpara de pie', icon: ICONS.floorlamp, detail: '79 €' },
     ]
   }
 
@@ -223,7 +283,7 @@ export class CatalogPanel {
       card.className = 'card'
       const swatch = this.root.createElement('div')
       swatch.className = 'swatch'
-      swatch.textContent = entry.emoji
+      swatch.innerHTML = entry.icon
       const name = this.root.createElement('div')
       name.className = 'name'
       name.textContent = entry.name

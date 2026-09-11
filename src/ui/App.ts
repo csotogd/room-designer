@@ -6,7 +6,12 @@ import { RemoveFurnitureCommand } from '../app/commands/RemoveFurnitureCommand'
 import { RotateFurnitureCommand } from '../app/commands/FurnitureCommands'
 import { RemoveOpeningCommand } from '../app/commands/PlanCommands'
 import { SetFloorFinishCommand, SetWallFinishCommand } from '../app/commands/FinishCommands'
-import { RemoveLightCommand } from '../app/commands/LightCommands'
+import {
+  RemoveLightCommand,
+  SetLightIntensityCommand,
+  SetLightTemperatureCommand,
+  ToggleLightCommand,
+} from '../app/commands/LightCommands'
 import { DefaultCatalog } from '../app/catalog/DefaultCatalog'
 import type { FurnitureCatalog } from '../app/catalog/FurnitureCatalog'
 import { deserializeProject, serializeProject } from '../app/serialization/ProjectSerializer'
@@ -18,8 +23,10 @@ import { View3D, type Placement, type Selectable } from './view3d/View3D'
 import { View2D } from './view2d/View2D'
 import { WallTool } from './view2d/tools/WallTool'
 import { SelectTool } from './view2d/tools/SelectTool'
+import { applyDesignerActions } from '../app/designer/actionApplier'
 import { CatalogPanel } from './panels/CatalogPanel'
 import { CartPanel } from './panels/CartPanel'
+import { ChatPanel } from './panels/ChatPanel'
 import { CreateRoomModal } from './panels/CreateRoomModal'
 import type { ToolContext } from './types'
 
@@ -32,6 +39,7 @@ export class App {
   private view2d: View2D | null = null
   private readonly catalogPanel: CatalogPanel
   private readonly cartPanel: CartPanel
+  private readonly chatPanel: ChatPanel
   private readonly modal: CreateRoomModal
   private readonly repository: ProjectRepository = new LocalStorageProjectRepository(localStorage)
   private selection: Selectable | null = null
@@ -68,6 +76,26 @@ export class App {
       },
     )
     this.cartPanel = new CartPanel(root, this.project)
+    this.chatPanel = new ChatPanel(root, {
+      apply: (actions) => {
+        const report = applyDesignerActions(
+          {
+            project: () => this.project,
+            catalog: this.catalog,
+            stack: this.stack,
+            replaceRoom: (plan, height) => {
+              this.modal.hide()
+              this.setProject(new Project(plan, height))
+            },
+          },
+          actions,
+        )
+        this.refreshUndoButtons()
+        return report
+      },
+      screenshot: () => this.view3d.captureScreenshot(),
+      sceneIsEmpty: () => this.project.furniture.length === 0,
+    })
     this.modal = new CreateRoomModal(root, (plan) => {
       this.setProject(new Project(plan, plan.walls[0]?.height ?? 2.5))
       this.hint('Elige puertas, ventanas, muebles o luces del catálogo y colócalos en la escena.')
@@ -120,10 +148,10 @@ export class App {
         currency: 'EUR',
         maximumFractionDigits: 0,
       })
-      price.style.color = '#767676'
+      price.style.color = '#8a8072'
       panel.append(name, price)
       panel.append(
-        this.pill('⟳ Rotar (R)', () => this.rotateSelection(furniture)),
+        this.pill('⟳ 45° (R) · rueda para girar fino', () => this.rotateSelection(furniture)),
         this.pill('Eliminar', () => {
           this.stack.execute(new RemoveFurnitureCommand(this.project, furniture))
           this.view3dSelect(null)
@@ -134,7 +162,7 @@ export class App {
       panel.append(this.objName(opening.kind === 'door' ? 'Puerta' : 'Ventana'))
       const tip = this.root.createElement('span')
       tip.textContent = 'Arrástrala por la pared'
-      tip.style.color = '#767676'
+      tip.style.color = '#8a8072'
       tip.style.fontSize = '12px'
       panel.append(
         tip,
@@ -156,16 +184,32 @@ export class App {
     const onInput = this.root.createElement('input')
     onInput.type = 'checkbox'
     onInput.checked = light.on
-    onInput.addEventListener('change', () => this.project.toggleLight(light))
+    onInput.addEventListener('change', () =>
+      this.stack.execute(new ToggleLightCommand(this.project, light)),
+    )
     onLabel.append(onInput, 'Encendida')
 
+    // Los sliders previsualizan en vivo (mutación directa) y al soltar
+    // vuelven al valor inicial y ejecutan UN comando: un gesto = un undo.
+    let intensityBefore = light.intensity
     const intensityLabel = this.root.createElement('label')
-    intensityLabel.append('Intensidad', this.slider(0, 1, 0.05, light.intensity, (v) =>
-      this.project.updateLight(light, (l) => l.setIntensity(v)),
+    intensityLabel.append('Intensidad', this.slider(0, 1, 0.05, light.intensity,
+      (v) => this.project.updateLight(light, (l) => l.setIntensity(v)),
+      (v) => {
+        this.project.updateLight(light, (l) => l.setIntensity(intensityBefore))
+        this.stack.execute(new SetLightIntensityCommand(this.project, light, v))
+        intensityBefore = v
+      },
     ))
+    let temperatureBefore = light.temperatureK
     const temperatureLabel = this.root.createElement('label')
-    temperatureLabel.append('Color', this.slider(2000, 6500, 100, light.temperatureK, (v) =>
-      this.project.updateLight(light, (l) => l.setTemperature(v)),
+    temperatureLabel.append('Color', this.slider(2000, 6500, 100, light.temperatureK,
+      (v) => this.project.updateLight(light, (l) => l.setTemperature(v)),
+      (v) => {
+        this.project.updateLight(light, (l) => l.setTemperature(temperatureBefore))
+        this.stack.execute(new SetLightTemperatureCommand(this.project, light, v))
+        temperatureBefore = v
+      },
     ))
 
     panel.append(
@@ -183,6 +227,9 @@ export class App {
     this.selection = selection
     this.renderInspector()
     this.view3d.setPlacement(null)
+    // La vista 3D bloquea la cámara mientras hay mueble seleccionado: al
+    // deseleccionar desde fuera (Esc, eliminar) hay que soltarla también.
+    if (!selection) this.view3d.clearSelection()
   }
 
   // ── Topbar ───────────────────────────────────────────────────────────────
@@ -242,9 +289,9 @@ export class App {
     })
   }
 
-  /** Rota 15° si el mueble sigue cabiendo dentro de la habitación. */
+  /** Rota 45° si el mueble sigue cabiendo dentro de la habitación. */
   private rotateSelection(furniture: Furniture): void {
-    const target = furniture.rotationY + Math.PI / 12
+    const target = furniture.rotationY + Math.PI / 4
     const { x, z } = furniture.position
     if (!fitsInRoom(this.project.floorPlan, furniture.item, x, z, target)) {
       this.hint('No se puede rotar ahí: chocaría con la pared.')
@@ -312,16 +359,19 @@ export class App {
   }
 
   private toolContext(): ToolContext {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const app = this
     return {
-      project: this.project,
+      // Getter, no valor: tras "Cargar"/"Nueva habitación" las herramientas
+      // ya construidas deben editar el proyecto vivo, no el descartado.
+      get project() {
+        return app.project
+      },
       stack: this.stack,
       catalog: this.catalog,
-      catalogItemId: () => 'sofa',
-      lightKind: () => 'ceiling',
       selection: () => null,
       select: () => {},
       hint: (m) => this.hint(m),
-      requestDraw: () => this.view2d?.draw(),
     }
   }
 
@@ -353,6 +403,9 @@ export class App {
     this.unsubscribe()
     this.project = project
     this.unsubscribe = this.subscribeProject()
+    // El historial pertenece al proyecto anterior: deshacer aquí mutaría un
+    // agregado descartado sin efecto visible.
+    this.stack.clear()
     this.view3dSelect(null)
     this.view3d.setProject(project)
     this.view2d?.setProject(project)
@@ -418,6 +471,7 @@ export class App {
     step: number,
     value: number,
     onInput: (v: number) => void,
+    onCommit?: (v: number) => void,
   ): HTMLInputElement {
     const input = this.root.createElement('input')
     input.type = 'range'
@@ -426,6 +480,7 @@ export class App {
     input.step = String(step)
     input.value = String(value)
     input.addEventListener('input', () => onInput(Number(input.value)))
+    if (onCommit) input.addEventListener('change', () => onCommit(Number(input.value)))
     return input
   }
 

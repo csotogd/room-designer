@@ -1,6 +1,18 @@
 import { readFile } from 'node:fs/promises'
 import type { JudgeInput, QualityJudge, QualityVerdict } from '../core/types'
 
+interface JudgeImage {
+  data: string
+  mediaType: string
+}
+
+function mediaTypeOf(path: string): string {
+  if (path.endsWith('.webp')) return 'image/webp'
+  if (path.endsWith('.png')) return 'image/png'
+  if (path.endsWith('.gif')) return 'image/gif'
+  return 'image/jpeg'
+}
+
 /** Sin juez configurado: todo pasa (el veredicto queda auditado como no-op). */
 export class NoopJudge implements QualityJudge {
   readonly name = 'noop'
@@ -41,23 +53,35 @@ export class VlmJudge implements QualityJudge {
     if (!input.previewPath && !input.packshotPath) {
       return { status: 'pending', reason: 'sin imágenes para juzgar', judge: this.name }
     }
-    const images: string[] = []
+    const images: JudgeImage[] = []
     for (const path of [input.packshotPath, input.previewPath]) {
-      if (path) images.push((await readFile(path)).toString('base64'))
+      if (path) {
+        images.push({
+          data: (await readFile(path)).toString('base64'),
+          // El media_type debe coincidir con los bytes reales (la API de
+          // Anthropic lo valida): previews son .webp, fotos .jpg/.png.
+          mediaType: mediaTypeOf(path),
+        })
+      }
     }
     const raw =
       this.config.provider === 'anthropic'
         ? await this.callAnthropic(images)
         : await this.callOpenAi(images)
     try {
-      const parsed = JSON.parse(raw.match(/\{[^}]*\}/)?.[0] ?? raw) as QualityVerdict
+      // Del primer '{' al último '}': aguanta razones con llaves y texto extra.
+      const jsonSpan = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)
+      const parsed = JSON.parse(jsonSpan) as QualityVerdict
+      if (parsed.status !== 'approved' && parsed.status !== 'rejected' && parsed.status !== 'pending') {
+        return { status: 'pending', reason: `status inválido del juez: ${String(parsed.status)}`, judge: this.name }
+      }
       return { status: parsed.status, reason: parsed.reason, judge: this.name }
     } catch {
       return { status: 'pending', reason: `respuesta no parseable: ${raw.slice(0, 80)}`, judge: this.name }
     }
   }
 
-  private async callAnthropic(imagesBase64: string[]): Promise<string> {
+  private async callAnthropic(images: JudgeImage[]): Promise<string> {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -72,9 +96,9 @@ export class VlmJudge implements QualityJudge {
           {
             role: 'user',
             content: [
-              ...imagesBase64.map((data) => ({
+              ...images.map((image) => ({
                 type: 'image',
-                source: { type: 'base64', media_type: 'image/jpeg', data },
+                source: { type: 'base64', media_type: image.mediaType, data: image.data },
               })),
               { type: 'text', text: PROMPT },
             ],
@@ -82,12 +106,13 @@ export class VlmJudge implements QualityJudge {
         ],
       }),
     })
+    // ok primero: un 502 con HTML no debe morir como SyntaxError de JSON.
+    if (!response.ok) throw new Error(`anthropic HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`)
     const payload = (await response.json()) as { content?: { text?: string }[] }
-    if (!response.ok) throw new Error(`anthropic HTTP ${response.status}`)
     return payload.content?.[0]?.text ?? ''
   }
 
-  private async callOpenAi(imagesBase64: string[]): Promise<string> {
+  private async callOpenAi(images: JudgeImage[]): Promise<string> {
     const base = this.config.baseUrl ?? 'https://api.openai.com/v1'
     const response = await fetch(`${base}/chat/completions`, {
       method: 'POST',
@@ -102,9 +127,9 @@ export class VlmJudge implements QualityJudge {
           {
             role: 'user',
             content: [
-              ...imagesBase64.map((data) => ({
+              ...images.map((image) => ({
                 type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${data}` },
+                image_url: { url: `data:${image.mediaType};base64,${image.data}` },
               })),
               { type: 'text', text: PROMPT },
             ],
@@ -112,10 +137,10 @@ export class VlmJudge implements QualityJudge {
         ],
       }),
     })
+    if (!response.ok) throw new Error(`openai-compatible HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`)
     const payload = (await response.json()) as {
       choices?: { message?: { content?: string } }[]
     }
-    if (!response.ok) throw new Error(`openai-compatible HTTP ${response.status}`)
     return payload.choices?.[0]?.message?.content ?? ''
   }
 }

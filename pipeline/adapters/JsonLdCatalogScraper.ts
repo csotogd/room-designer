@@ -20,22 +20,36 @@ export class JsonLdCatalogScraper implements CatalogScraper {
     const products: ScrapedProduct[] = []
     const visited = new Set<string>()
 
-    for (const categoryUrl of this.config.categoryUrls) {
-      if (products.length >= limit) break
-      let links: string[]
+    // Colas de enlaces por categoría: el límite se reparte en turnos (una de
+    // cada categoría por ronda) para que el catálogo salga variado en vez de
+    // agotarse en la primera categoría.
+    const { categoryUrls, productLinkPattern } = this.config
+    if (!categoryUrls?.length || !productLinkPattern) {
+      throw new Error(`El sitio "${this.config.id}" no tiene categoryUrls/productLinkPattern (¿kind equivocado?)`)
+    }
+    const queues: string[][] = []
+    for (const categoryUrl of categoryUrls) {
       try {
-        links = extractProductLinks(
-          await this.fetchText(categoryUrl),
-          this.config.productLinkPattern,
-          this.config.origin,
+        queues.push(
+          extractProductLinks(
+            await this.fetchText(categoryUrl),
+            productLinkPattern,
+            this.config.origin,
+          ),
         )
       } catch (error) {
         console.warn(`[scraper] categoría inaccesible ${categoryUrl}: ${String(error)}`)
-        continue
       }
+    }
 
-      for (const url of links) {
+    let remaining = true
+    while (products.length < limit && remaining) {
+      remaining = false
+      for (const queue of queues) {
         if (products.length >= limit) break
+        const url = queue.shift()
+        if (!url) continue
+        remaining = true
         if (visited.has(url)) continue
         visited.add(url)
         try {
@@ -47,6 +61,9 @@ export class JsonLdCatalogScraper implements CatalogScraper {
           await sleep(this.delayMs)
         } catch (error) {
           console.warn(`[scraper] producto fallido ${url}: ${String(error)}`)
+          // Cortesía también al fallar: si el sitio devuelve errores (429,
+          // caída), es exactamente cuando NO hay que martillearlo.
+          await sleep(this.delayMs * 2)
         }
       }
     }

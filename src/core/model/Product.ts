@@ -1,7 +1,10 @@
 /** Referencias a los assets del producto; en producción, URLs de un bucket (S3/CDN). */
 export interface ProductAssets {
-  /** Foto de producto para el catálogo. */
+  /** Foto de producto para el catálogo (puede ser lifestyle, con ambiente). */
   readonly imageUrl?: string
+  /** Packshot: SOLO el producto sobre fondo neutro (entrada de la generación
+   *  3D y del embedding de búsqueda, donde el fondo contaminaría el vector). */
+  readonly packshotUrl?: string
   /** Modelo 3D (GLB/glTF) con texturas. */
   readonly modelUrl?: string
 }

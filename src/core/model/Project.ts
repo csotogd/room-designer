@@ -15,8 +15,30 @@ import type { LightPoint } from './LightPoint'
 import type { Opening } from './Opening'
 import type { Wall } from './Wall'
 
+/**
+ * Tipos de cambio del proyecto. Union cerrada a propósito: las vistas hacen
+ * switch sobre `kind` para refrescos granulares y un typo aquí degradaría
+ * en silencio a reconstrucción completa — así es error de compilación.
+ */
+export type ProjectChangeKind =
+  | 'wall-added'
+  | 'wall-removed'
+  | 'opening-added'
+  | 'opening-removed'
+  | 'opening-moved'
+  | 'furniture-added'
+  | 'furniture-removed'
+  | 'furniture-moved'
+  | 'furniture-rotated'
+  | 'light-added'
+  | 'light-removed'
+  | 'light-moved'
+  | 'light-changed'
+  | 'finish-changed'
+  | 'time-changed'
+
 export interface ProjectEvents extends Record<string, unknown> {
-  changed: { kind: string }
+  changed: { kind: ProjectChangeKind }
 }
 
 /**
@@ -88,11 +110,6 @@ export class Project {
     this.emitChanged('opening-removed')
   }
 
-  moveWall(wall: Wall, start: Point2D, end: Point2D): void {
-    wall.moveTo(start, end)
-    this.emitChanged('wall-moved')
-  }
-
   /** Desliza una apertura por su pared (validado por la pared). */
   moveOpening(wall: Wall, opening: Opening, offset: number): void {
     wall.moveOpening(opening, offset)
@@ -120,8 +137,14 @@ export class Project {
     return furniture
   }
 
-  addFurniture(furniture: Furniture): void {
-    this._furniture.push(furniture)
+  /** `at` permite restaurar en su posición original al deshacer un borrado. */
+  addFurniture(furniture: Furniture, at?: number): void {
+    if (this._furniture.includes(furniture)) return
+    if (at === undefined || at < 0 || at > this._furniture.length) {
+      this._furniture.push(furniture)
+    } else {
+      this._furniture.splice(at, 0, furniture)
+    }
     this.emitChanged('furniture-added')
   }
 
@@ -244,7 +267,7 @@ export class Project {
     }
   }
 
-  private emitChanged(kind: string): void {
+  private emitChanged(kind: ProjectChangeKind): void {
     this.events.emit('changed', { kind })
   }
 }

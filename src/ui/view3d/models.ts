@@ -52,6 +52,9 @@ function normalizeToDimensions(scene: THREE.Group, product: CatalogItem): THREE.
     if (obj instanceof THREE.Mesh) {
       obj.castShadow = true
       obj.receiveShadow = true
+      // Los clones comparten geometría/materiales con este prototipo cacheado:
+      // la marca evita que el dispose de un clon rompa las demás instancias.
+      obj.userData.sharedAsset = true
     }
   })
   return group

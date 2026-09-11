@@ -1,12 +1,15 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  // CATALOG_SITE llega al front (import.meta.env.CATALOG_SITE): la misma
+  // variable elige catálogo en el pipeline, el servicio de búsqueda y la app.
+  envPrefix: ['VITE_', 'CATALOG_'],
   server: { port: 5173 },
   test: {
     include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/core/**', 'src/app/**'],
+      include: ['src/core/**', 'src/app/**', 'pipeline/core/**', 'services/search/core/**', 'services/designer/core/**'],
       // Umbrales de CI (medidos: ~93% líneas, ~82% ramas). Si bajan de aquí,
       // el build rompe: son puertas, no métricas decorativas.
       thresholds: {

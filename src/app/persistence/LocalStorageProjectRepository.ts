@@ -12,13 +12,14 @@ export interface KeyValueStorage {
 export class LocalStorageProjectRepository implements ProjectRepository {
   constructor(private readonly storage: KeyValueStorage) {}
 
-  save(doc: ProjectDoc): Promise<void> {
+  // async: un QuotaExceededError o un JSON corrupto deben rechazar la
+  // promesa (y llegar al .catch de quien llama), no escapar síncronos.
+  async save(doc: ProjectDoc): Promise<void> {
     this.storage.setItem(STORAGE_KEY, JSON.stringify(doc))
-    return Promise.resolve()
   }
 
-  load(): Promise<ProjectDoc | null> {
+  async load(): Promise<ProjectDoc | null> {
     const raw = this.storage.getItem(STORAGE_KEY)
-    return Promise.resolve(raw ? (JSON.parse(raw) as ProjectDoc) : null)
+    return raw ? (JSON.parse(raw) as ProjectDoc) : null
   }
 }

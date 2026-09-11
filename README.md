@@ -36,6 +36,36 @@ La pestaña **Acabados** permite elegir material y color de paredes
 microcemento) con paletas y selector libre; los acabados forman parte del
 proyecto (undo + guardado, documento v2 con migración desde v1).
 
+## Catálogos y CATALOG_SITE
+
+Hay tres catálogos, cada uno con su pipeline, su índice publicado
+(`public/catalog/index-<site>.json`) y su índice de embeddings persistente
+(`data/search-index/<site>/`):
+
+| Sitio       | Fuente                              | Modelos 3D             | Licencia            |
+|-------------|-------------------------------------|------------------------|---------------------|
+| `sklum`     | scraping JSON-LD de la tienda       | generados (Tripo/Trellis) + juez | fotos/datos de la tienda |
+| `polyhaven` | API pública de Poly Haven           | glTF nativos con medidas reales | **CC0** (uso libre) |
+| `sketchfab` | API pública de Sketchfab (muebles)  | GLB nativos (requiere `SKETCHFAB_API_TOKEN`) | CC0 / CC-BY (con atribución: `license`/`author` viajan en el catálogo) |
+
+La variable **`CATALOG_SITE`** (en `.env`; hoy `polyhaven`) elige el catálogo
+activo en las tres capas a la vez: los CLIs del pipeline la usan como `--site`
+por defecto, el servicio de búsqueda abre la carpeta de índice de ese sitio, y
+el front (Vite la expone) carga su `index-<site>.json`. Cambiar de catálogo =
+cambiar la variable y reiniciar `search:serve` y `dev` (el índice de cada
+sitio ya está construido: no se re-embebe nada).
+
+```bash
+npm run pipeline:ingest -- --site polyhaven   # descarga catálogo completo (CC0)
+npm run pipeline:link -- --site polyhaven     # publica + sincroniza embeddings
+npm run search:eval                           # calidad del buscador (golden por sitio)
+```
+
+Sketchfab: la búsqueda y las fotos no requieren credenciales, pero descargar
+los GLB sí — token gratuito en sketchfab.com → ajustes → API token →
+`SKETCHFAB_API_TOKEN` en `.env` y relanzar la ingesta. Las medidas de esos
+modelos se calculan del propio GLB (`pipeline/core/glb.ts`).
+
 **Producción:** el plan de migración a front + back con gRPC (Connect-ES),
 con los contratos ya definidos, está en [ARCHITECTURE.md](ARCHITECTURE.md) y
 [proto/roomdesigner/v1/roomdesigner.proto](proto/roomdesigner/v1/roomdesigner.proto).

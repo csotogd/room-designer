@@ -1,0 +1,43 @@
+{
+  "$comment": "Golden set de calidad del buscador: consulta → ids relevantes del catálogo publicado. Se evalúa con npm run search:eval; amplíalo con cada categoría nueva que entre al catálogo.",
+  "cases": [
+    {
+      "query": "silla de madera de roble",
+      "relevant": [
+        "sklum-225841-silla-de-comedor-en-madera-de-roble-y-boucle-keluna",
+        "sklum-213247-silla-de-comedor-en-madera-de-roble-y-tapizada-olea",
+        "sklum-239512-silla-de-comedor-con-reposabrazos-tapizada-y-en-madera-de-roble-carbalis"
+      ]
+    },
+    {
+      "query": "silla con reposabrazos",
+      "relevant": [
+        "sklum-213247-silla-de-comedor-en-madera-de-roble-y-tapizada-olea",
+        "sklum-191894-silla-de-comedor-con-reposabrazos-en-tela-chenilla-jolie",
+        "sklum-239512-silla-de-comedor-con-reposabrazos-tapizada-y-en-madera-de-roble-carbalis",
+        "sklum-243469-silla-de-comedor-con-reposabrazos-tapizada-en-tela-nervoxi"
+      ]
+    },
+    {
+      "query": "silla tapizada en chenilla",
+      "relevant": [
+        "sklum-191888-silla-de-comedor-en-tela-chenilla-jolie",
+        "sklum-191894-silla-de-comedor-con-reposabrazos-en-tela-chenilla-jolie",
+        "sklum-234563-silla-de-comedor-tapizada-en-chenilla-vielira"
+      ]
+    },
+    {
+      "query": "silla plegable de piel",
+      "relevant": [
+        "sklum-231957-silla-de-director-plegable-en-piel-y-acero-inoxidable-dravena"
+      ]
+    },
+    {
+      "query": "silla barata tapizada",
+      "relevant": [
+        "sklum-234563-silla-de-comedor-tapizada-en-chenilla-vielira",
+        "sklum-243469-silla-de-comedor-con-reposabrazos-tapizada-en-tela-nervoxi"
+      ]
+    }
+  ]
+}

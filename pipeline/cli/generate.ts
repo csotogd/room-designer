@@ -6,6 +6,7 @@
  *   GENERATOR=tripo TRIPO_API_KEY=... npm run pipeline:generate -- --site sklum
  */
 import { LocalFolderAssetStore } from '../adapters/LocalFolderAssetStore'
+import { defaultSiteId } from '../adapters/sites'
 import { TrellisSpaceMeshGenerator } from '../adapters/TrellisSpaceMeshGenerator'
 import { TrellisV1SpaceMeshGenerator } from '../adapters/TrellisV1SpaceMeshGenerator'
 import { TripoMeshGenerator } from '../adapters/TripoMeshGenerator'
@@ -17,7 +18,7 @@ for (let i = 2; i < process.argv.length; i += 2) {
   args.set(process.argv[i]!.replace(/^--/, ''), process.argv[i + 1] ?? '')
 }
 
-const siteId = args.get('site') ?? 'sklum'
+const siteId = args.get('site') ?? defaultSiteId()
 const count = Number(args.get('count') ?? Infinity)
 const root = args.get('out') ?? 'data/catalog'
 

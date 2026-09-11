@@ -1,6 +1,6 @@
 import type { Point2D } from '../core/geometry/Point2D'
 import type { Furniture } from '../core/model/Furniture'
-import type { LightPoint, LightKind } from '../core/model/LightPoint'
+import type { LightPoint } from '../core/model/LightPoint'
 import type { Project } from '../core/model/Project'
 import type { Wall } from '../core/model/Wall'
 import type { CommandStack } from '../app/commands/CommandStack'
@@ -16,12 +16,9 @@ export interface ToolContext {
   readonly project: Project
   readonly stack: CommandStack
   readonly catalog: FurnitureCatalog
-  catalogItemId(): string
-  lightKind(): LightKind
   selection(): Selection | null
   select(selection: Selection | null): void
   hint(message: string): void
-  requestDraw(): void
 }
 
 /** Una herramienta 2D recibe eventos en coordenadas de mundo (metros). */

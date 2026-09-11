@@ -8,3 +8,5 @@ data/catalog/
 public/catalog/
 .env
 coverage/
+data/search-index/
+data/designer/

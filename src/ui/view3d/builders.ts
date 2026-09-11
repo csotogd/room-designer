@@ -510,9 +510,24 @@ function shadeHex(hex: string, factor: number): string {
  * Mueble pinchable con las medidas reales del artículo. Si el producto tiene
  * modelo GLB, se usa (cargado en diferido); si no, su forma procedural.
  */
+const skipRaycast = (): void => {}
+const pickProxyMaterial = new THREE.MeshBasicMaterial()
+
 export function buildFurniture(furniture: Furniture, onModelLoaded?: () => void): THREE.Group {
   const group =
     (onModelLoaded && modelFor(furniture.item, onModelLoaded)) || furnitureShape(furniture.item)
+  // El raycast triángulo a triángulo es carísimo con GLB detallados: el ratón
+  // pincha contra una caja invisible con las medidas del artículo, y las
+  // mallas visibles quedan fuera del raycast.
+  group.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) obj.raycast = skipRaycast
+  })
+  const proxy = new THREE.Mesh(
+    new THREE.BoxGeometry(furniture.item.width, furniture.item.height, furniture.item.depth),
+    pickProxyMaterial,
+  )
+  proxy.visible = false
+  group.add(proxy)
   group.userData.pick = { type: 'furniture', furniture } satisfies Pick
   group.position.set(
     furniture.position.x,
@@ -523,17 +538,25 @@ export function buildFurniture(furniture: Furniture, onModelLoaded?: () => void)
   return group
 }
 
-/** Fantasma translúcido para el modo de colocación. */
-export function buildGhost(item: CatalogItem, valid: boolean): THREE.Group {
+/**
+ * Fantasma translúcido para el modo de colocación. Todas las mallas comparten
+ * un único material (en `userData.ghostMaterial`) cuyo color indica validez;
+ * así el fantasma se cachea y retinta sin reconstruirse en cada movimiento.
+ */
+export function buildGhost(item: CatalogItem): THREE.Group {
   const group = furnitureShape(item)
+  const ghostMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2e7d32,
+    transparent: true,
+    opacity: 0.45,
+  })
+  group.userData.ghostMaterial = ghostMaterial
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
       obj.castShadow = false
-      obj.material = new THREE.MeshStandardMaterial({
-        color: valid ? 0x2e7d32 : 0xc0392b,
-        transparent: true,
-        opacity: 0.45,
-      })
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material]
+      for (const material of materials) material.dispose()
+      obj.material = ghostMaterial
     }
   })
   return group
