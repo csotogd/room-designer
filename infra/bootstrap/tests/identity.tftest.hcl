@@ -7,6 +7,27 @@ mock_provider "google" {
   }
 }
 
+run "airflow_access_is_disabled_by_default" {
+  command = plan
+  assert {
+    condition     = !contains(local.apis, "compute.googleapis.com") && !contains(local.deploy_roles, "roles/compute.instanceAdmin.v1")
+    error_message = "Los entornos que no operan Airflow no reciben permisos adicionales."
+  }
+}
+
+run "airflow_access_is_explicit" {
+  command = plan
+  variables { enable_airflow = true }
+  assert {
+    condition     = alltrue([for api in ["compute.googleapis.com", "iap.googleapis.com", "monitoring.googleapis.com", "logging.googleapis.com"] : contains(local.apis, api)])
+    error_message = "El entorno seleccionado necesita las APIs de operación de Airflow."
+  }
+  assert {
+    condition     = alltrue([for role in ["roles/compute.instanceAdmin.v1", "roles/compute.osAdminLogin", "roles/iap.tunnelResourceAccessor", "roles/monitoring.editor"] : contains(local.deploy_roles, role)])
+    error_message = "La entrega habilitada debe poder actualizar el nodo privado y comprobarlo mediante IAP."
+  }
+}
+
 variables {
   project_id  = "designer-dev-123"
   environment = "dev"

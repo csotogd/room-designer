@@ -124,6 +124,9 @@ jobs:
           tofu -chdir=infra/bootstrap init -backend=false -input=false
           tofu -chdir=infra/bootstrap validate
           tofu -chdir=infra/bootstrap test
+          tofu -chdir=infra/airflow init -backend=false -input=false
+          tofu -chdir=infra/airflow validate
+          tofu -chdir=infra/airflow test
 
   quality-gate:
     name: Puerta de calidad
@@ -209,3 +212,8 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           EXPECTED_WEB_IMAGE: ${{ steps.images.outputs.frontend }}
         run: python ops/cloud_smoke.py
+      - name: Desplegar Airflow en el entorno habilitado
+        if: vars.AIRFLOW_ENABLED == 'true'
+        env:
+          AIRFLOW_ALERT_EMAIL: ${{ vars.AIRFLOW_ALERT_EMAIL }}
+        run: python ops/airflow_delivery.py

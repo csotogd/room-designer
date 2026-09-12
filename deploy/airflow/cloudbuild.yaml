@@ -1,0 +1,27 @@
+# La publicación se produce únicamente después de las pruebas sobre esta imagen.
+steps:
+  - id: build-airflow
+    name: gcr.io/cloud-builders/docker
+    args: [build, --platform=linux/amd64, -f, deploy/airflow/Dockerfile, --build-arg, 'COMMIT_SHA=${_COMMIT_SHA}', -t, 'europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/airflow:${_COMMIT_SHA}-$BUILD_ID', .]
+  - id: test-dag
+    name: gcr.io/cloud-builders/docker
+    waitFor: [build-airflow]
+    args:
+      - run
+      - --rm
+      - --network=none
+      - --env=AIRFLOW_HOME=/tmp/airflow
+      - --env=AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - --entrypoint=python
+      - europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/airflow:${_COMMIT_SHA}-$BUILD_ID
+      - /opt/designer/deploy/airflow/smoke_dag.py
+  - id: test-catalog-cli
+    name: gcr.io/cloud-builders/docker
+    waitFor: [build-airflow]
+    args: [run, --rm, --network=none, --entrypoint=/opt/catalog/bin/catalog, 'europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/airflow:${_COMMIT_SHA}-$BUILD_ID', link, --no-sync, --help]
+images:
+  - europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/airflow:${_COMMIT_SHA}-$BUILD_ID
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s
+tags: [room-designer, airflow, '${_ENVIRONMENT}']

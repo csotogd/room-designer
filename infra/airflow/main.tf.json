@@ -1,0 +1,331 @@
+{
+  "terraform": {
+    "required_version": ">= 1.7",
+    "required_providers": {
+      "google": {
+        "source": "hashicorp/google",
+        "version": "~> 6.0"
+      }
+    },
+    "backend": {
+      "gcs": {}
+    }
+  },
+  "provider": {
+    "google": {
+      "project": "${var.project_id}",
+      "region": "${var.region}"
+    }
+  },
+  "variable": {
+    "project_id": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string",
+      "validation": {
+        "condition": "${contains([\"dev\", \"stage\", \"prod\"], var.environment)}",
+        "error_message": "Usar dev, stage o prod."
+      }
+    },
+    "region": {
+      "type": "string",
+      "default": "europe-west1"
+    },
+    "zone": {
+      "type": "string",
+      "default": "europe-west1-b"
+    },
+    "notification_email": {
+      "type": "string",
+      "validation": {
+        "condition": "${can(regex(\"^[^@ ]+@[^@ ]+[.][^@ ]+$\", var.notification_email))}",
+        "error_message": "Hace falta un destinatario válido para los avisos."
+      }
+    },
+    "airflow_image": {
+      "type": "string",
+      "validation": {
+        "condition": "${can(regex(\"@sha256:[a-f0-9]{64}$\", var.airflow_image))}",
+        "error_message": "Desplegar únicamente la imagen probada por digest SHA256."
+      }
+    }
+  },
+  "locals": {
+    "name": "rd-${var.environment}-airflow"
+  },
+  "resource": {
+    "google_service_account": {
+      "airflow": {
+        "account_id": "${local.name}",
+        "display_name": "Airflow del catálogo ${var.environment}"
+      }
+    },
+    "google_project_iam_member": {
+      "runtime": {
+        "for_each": "${toset([\"roles/logging.logWriter\", \"roles/monitoring.metricWriter\"])}",
+        "project": "${var.project_id}",
+        "role": "${each.value}",
+        "member": "serviceAccount:${google_service_account.airflow.email}"
+      }
+    },
+    "google_artifact_registry_repository_iam_member": {
+      "images": {
+        "location": "${var.region}",
+        "repository": "room-designer-${var.environment}-pipeline",
+        "role": "roles/artifactregistry.reader",
+        "member": "serviceAccount:${google_service_account.airflow.email}"
+      }
+    },
+    "google_compute_network": {
+      "airflow": {
+        "name": "${local.name}",
+        "auto_create_subnetworks": false
+      }
+    },
+    "google_compute_subnetwork": {
+      "airflow": {
+        "name": "${local.name}",
+        "ip_cidr_range": "10.61.0.0/24",
+        "region": "${var.region}",
+        "network": "${google_compute_network.airflow.id}",
+        "private_ip_google_access": true
+      }
+    },
+    "google_compute_firewall": {
+      "iap": {
+        "name": "${local.name}-iap",
+        "network": "${google_compute_network.airflow.id}",
+        "direction": "INGRESS",
+        "source_ranges": [
+          "35.235.240.0/20"
+        ],
+        "target_service_accounts": [
+          "${google_service_account.airflow.email}"
+        ],
+        "allow": [
+          {
+            "protocol": "tcp",
+            "ports": [
+              "22"
+            ]
+          }
+        ]
+      }
+    },
+    "google_compute_disk": {
+      "state": {
+        "name": "${local.name}-state",
+        "zone": "${var.zone}",
+        "type": "pd-balanced",
+        "size": 50,
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "google_compute_resource_policy": {
+      "backup": {
+        "name": "${local.name}-daily",
+        "region": "${var.region}",
+        "snapshot_schedule_policy": {
+          "schedule": {
+            "daily_schedule": {
+              "days_in_cycle": 1,
+              "start_time": "02:00"
+            }
+          },
+          "retention_policy": {
+            "max_retention_days": 7,
+            "on_source_disk_delete": "KEEP_AUTO_SNAPSHOTS"
+          },
+          "snapshot_properties": {
+            "storage_locations": [
+              "${var.region}"
+            ]
+          }
+        }
+      }
+    },
+    "google_compute_disk_resource_policy_attachment": {
+      "backup": {
+        "name": "${google_compute_resource_policy.backup.name}",
+        "disk": "${google_compute_disk.state.name}",
+        "zone": "${var.zone}"
+      }
+    },
+    "google_storage_bucket": {
+      "backups": {
+        "name": "${var.project_id}-airflow-backups",
+        "location": "${var.region}",
+        "uniform_bucket_level_access": true,
+        "public_access_prevention": "enforced",
+        "force_destroy": false,
+        "versioning": {
+          "enabled": true
+        },
+        "lifecycle_rule": [
+          {
+            "condition": {
+              "age": 14
+            },
+            "action": {
+              "type": "Delete"
+            }
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "google_storage_bucket_iam_member": {
+      "backups": {
+        "for_each": "${toset([\"roles/storage.objectCreator\", \"roles/storage.objectViewer\"])}",
+        "bucket": "${google_storage_bucket.backups.name}",
+        "role": "${each.value}",
+        "member": "serviceAccount:${google_service_account.airflow.email}"
+      }
+    },
+    "google_monitoring_notification_channel": {
+      "operator": {
+        "display_name": "${local.name}-avisos",
+        "type": "email",
+        "labels": {
+          "email_address": "${var.notification_email}"
+        }
+      }
+    },
+    "google_monitoring_alert_policy": {
+      "failures": {
+        "display_name": "${local.name}-fallos",
+        "combiner": "OR",
+        "notification_channels": [
+          "${google_monitoring_notification_channel.operator.name}"
+        ],
+        "conditions": [
+          {
+            "display_name": "Error de tarea, salud o copia de seguridad",
+            "condition_matched_log": {
+              "filter": "resource.type=\"gce_instance\" AND jsonPayload.component=\"catalog-airflow\" AND severity>=ERROR"
+            }
+          }
+        ],
+        "alert_strategy": {
+          "notification_rate_limit": {
+            "period": "3600s"
+          },
+          "auto_close": "86400s"
+        },
+        "documentation": {
+          "content": "Revisar el panel mediante IAP y los logs. No borrar el disco ni reintentar generaciones de pago sin comprobar los artefactos guardados.",
+          "mime_type": "text/markdown"
+        }
+      },
+      "missing_heartbeat": {
+        "display_name": "${local.name}-sin-latido",
+        "combiner": "OR",
+        "notification_channels": [
+          "${google_monitoring_notification_channel.operator.name}"
+        ],
+        "conditions": [
+          {
+            "display_name": "Nodo sin latidos durante diez minutos",
+            "condition_absent": {
+              "filter": "resource.type=\"gce_instance\" AND metric.type=\"logging.googleapis.com/user/${google_logging_metric.heartbeat.name}\"",
+              "duration": "600s",
+              "aggregations": [
+                {
+                  "alignment_period": "60s",
+                  "per_series_aligner": "ALIGN_DELTA"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "google_compute_instance": {
+      "airflow": {
+        "name": "${local.name}",
+        "zone": "${var.zone}",
+        "machine_type": "e2-standard-2",
+        "deletion_protection": true,
+        "allow_stopping_for_update": false,
+        "boot_disk": {
+          "initialize_params": {
+            "image": "ubuntu-os-cloud/ubuntu-2404-lts-amd64",
+            "size": 20,
+            "type": "pd-balanced"
+          }
+        },
+        "attached_disk": [
+          {
+            "source": "${google_compute_disk.state.id}",
+            "device_name": "airflow-state"
+          }
+        ],
+        "network_interface": [
+          {
+            "subnetwork": "${google_compute_subnetwork.airflow.id}",
+            "access_config": [
+              {}
+            ]
+          }
+        ],
+        "service_account": {
+          "email": "${google_service_account.airflow.email}",
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform"
+          ]
+        },
+        "shielded_instance_config": {
+          "enable_secure_boot": true,
+          "enable_vtpm": true,
+          "enable_integrity_monitoring": true
+        },
+        "metadata": {
+          "enable-oslogin": "TRUE",
+          "block-project-ssh-keys": "TRUE",
+          "airflow-image": "${var.airflow_image}",
+          "airflow-backup-bucket": "${google_storage_bucket.backups.name}",
+          "startup-script": "${file(\"${path.module}/../../deploy/airflow/startup.sh\")}"
+        },
+        "labels": {
+          "app": "room-designer",
+          "component": "airflow",
+          "environment": "${var.environment}"
+        },
+        "depends_on": [
+          "google_project_iam_member.runtime",
+          "google_artifact_registry_repository_iam_member.images",
+          "google_storage_bucket_iam_member.backups"
+        ]
+      }
+    },
+    "google_logging_metric": {
+      "heartbeat": {
+        "name": "${local.name}-heartbeat",
+        "filter": "resource.type=\"gce_instance\" AND jsonPayload.component=\"catalog-airflow\" AND jsonPayload.event=\"heartbeat\"",
+        "metric_descriptor": {
+          "metric_kind": "DELTA",
+          "value_type": "INT64"
+        }
+      }
+    }
+  },
+  "output": {
+    "instance_name": {
+      "value": "${google_compute_instance.airflow.name}"
+    },
+    "zone": {
+      "value": "${var.zone}"
+    },
+    "backup_bucket": {
+      "value": "${google_storage_bucket.backups.name}"
+    },
+    "panel_access": {
+      "value": "gcloud compute ssh ${google_compute_instance.airflow.name} --project=${var.project_id} --zone=${var.zone} --tunnel-through-iap -- -N -L 8080:127.0.0.1:8080"
+    }
+  }
+}

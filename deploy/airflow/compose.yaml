@@ -1,0 +1,119 @@
+# Despliegue de un solo nodo: acceso por túnel SSH/IAP y estado fuera del contenedor.
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 10m, max-file: '3'}
+
+x-airflow: &airflow
+  image: ${AIRFLOW_IMAGE:?}
+  user: '50000:0'
+  restart: unless-stopped
+  logging: *logging
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  environment: &environment
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__PARALLELISM: '1'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__FERNET_KEY_CMD: cat /run/catalog-secrets/fernet
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: cat /run/catalog-secrets/database_uri
+    AIRFLOW__API_AUTH__JWT_SECRET_CMD: cat /run/catalog-secrets/jwt
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: operator:admin
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /var/lib/airflow/users.json
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://api:8080/execution/
+    AIRFLOW__DAG_PROCESSOR__PARSING_PROCESSES: '1'
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: /var/lib/airflow/logs
+    CATALOG_CLI: /opt/designer/deploy/airflow/catalog-job.sh
+    CATALOG_SITE: ${CATALOG_SITE:-polyhaven}
+    CATALOG_SITES: ${CATALOG_SITES:-polyhaven}
+    CATALOG_REFRESH_SCHEDULE: ${CATALOG_REFRESH_SCHEDULE:-0 4 * * *}
+    CATALOG_PUBLIC_DIR: /var/lib/catalog/public
+    SEARCH_DATA_DIR: /var/lib/catalog/search
+    SEARCH_URL: http://search:8787
+    EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-hashing}
+    GENERATOR: tripo
+    CATALOG_ALERT_FILE: /var/lib/airflow/logs/alerts.jsonl
+  volumes:
+    - ${STATE_DIR:?}/catalog:/var/lib/catalog
+    - ${STATE_DIR:?}/logs:/var/lib/airflow/logs
+    - ${STATE_DIR:?}/secrets:/run/catalog-secrets:ro
+  depends_on:
+    postgres: {condition: service_healthy}
+
+services:
+  postgres:
+    image: postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_DB: airflow
+      POSTGRES_PASSWORD_FILE: /run/catalog-secrets/postgres
+    volumes:
+      - ${STATE_DIR:?}/postgres:/var/lib/postgresql/data
+      - ${STATE_DIR:?}/secrets:/run/catalog-secrets:ro
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U airflow -d airflow']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    <<: *airflow
+    restart: 'no'
+    command: [db, migrate]
+    profiles: [maintenance]
+
+  api:
+    <<: *airflow
+    command: [api-server, --workers, '1']
+    volumes:
+      - ${STATE_DIR:?}/catalog:/var/lib/catalog
+      - ${STATE_DIR:?}/logs:/var/lib/airflow/logs
+      - ${STATE_DIR:?}/secrets:/run/catalog-secrets:ro
+      # SimpleAuth abre el fichero con a+ incluso si el usuario ya existe.
+      - ${STATE_DIR:?}/secrets/users.json:/var/lib/airflow/users.json
+    ports: ['127.0.0.1:8080:8080']
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD, python, -c, 'import json,urllib.request; assert json.load(urllib.request.urlopen("http://localhost:8080/api/v2/monitor/health",timeout=5))["metadatabase"]["status"] == "healthy"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  scheduler:
+    <<: *airflow
+    command: [scheduler]
+    mem_limit: 3g
+    healthcheck:
+      test: [CMD-SHELL, 'airflow jobs check --job-type SchedulerJob --local']
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+
+  dag-processor:
+    <<: *airflow
+    command: [dag-processor]
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD-SHELL, 'airflow jobs check --job-type DagProcessorJob --local']
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+
+  search:
+    <<: *airflow
+    entrypoint: [/opt/designer/deploy/airflow/catalog-job.sh]
+    command: [search-serve]
+    mem_limit: 1g
+    depends_on: {}
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://localhost:8787/healthz",timeout=5)']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

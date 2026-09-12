@@ -117,6 +117,13 @@ async def ingest(args, env, client, store):
 
 async def sync_entries(entries, env, client, verify=False):
     url = env.get("SEARCH_URL", "http://localhost:8787").rstrip("/")
+    if verify:
+        health = await client.get(url + "/healthz")
+        health.raise_for_status()
+        if health.json()["products"] != len({e["id"] for e in entries}):
+            raise ValueError("Catálogo e índice no coinciden")
+        print(json.dumps({"verified": True, "products": health.json()["products"]}))
+        return
     headers = {"X-Request-Id": "catalog-" + uuid4().hex}
     if env.get("SEARCH_SYNC_TOKEN"):
         headers["Authorization"] = "Bearer " + env["SEARCH_SYNC_TOKEN"]
@@ -128,11 +135,6 @@ async def sync_entries(entries, env, client, verify=False):
     )
     response.raise_for_status()
     report = response.json()
-    if verify:
-        health = await client.get(url + "/healthz")
-        health.raise_for_status()
-        if health.json()["products"] != len({e["id"] for e in entries}):
-            raise ValueError("Catálogo e índice no coinciden")
     print(json.dumps(report))
 
 
@@ -146,10 +148,11 @@ async def publish(args, env, client, store):
     write_json(public / f"index-{args.site}.json", entries)
     if args.site == env.get("CATALOG_SITE", "sklum"):
         write_json(public / "index.json", entries)
-        try:
-            await sync_entries(entries, env, client)
-        except httpx.HTTPError:
-            log.warning("Catálogo publicado; búsqueda pendiente de sincronizar con catalog sync")
+        if not getattr(args, "no_sync", False):
+            try:
+                await sync_entries(entries, env, client)
+            except httpx.HTTPError:
+                log.warning("Catálogo publicado; búsqueda pendiente de sincronizar con catalog sync")
     print(f"{len(entries)} productos publicados")
     return 0
 
@@ -266,6 +269,7 @@ def main():
     parser.add_argument("--reason")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--verify", action="store_true")
+    parser.add_argument("--no-sync", action="store_true")
     parser.add_argument("--catalog")
     parser.add_argument("--golden")
     args = parser.parse_args()
