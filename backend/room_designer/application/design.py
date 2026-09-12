@@ -4,6 +4,7 @@ import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
 
+from room_designer.application.critique import record_verdict
 from room_designer.application.ports import AgentRuntime, ProductPicker, ProductSearch, RoomRepository
 from room_designer.domain.room import Json, RoomEditor
 
@@ -162,7 +163,7 @@ class DesignSession:
     async def state(self) -> Json:
         return await self.repository.load()
 
-    async def chat(self, brief: str, request_id: str) -> Json:
+    async def chat(self, brief: str, request_id: str, source: str = "user") -> Json:
         async with self.lock:
             state = await self.repository.load()
             editor = RoomEditor(state, self.catalog, request_id, datetime.now(timezone.utc).isoformat())
@@ -174,7 +175,7 @@ class DesignSession:
                 reply += f" ({len(tools.rejected)} propuestas rechazadas; consulta los motivos.)"
             editor.state["conversation"] = (
                 state.get("conversation", [])
-                + [{"role": "user", "text": brief}, {"role": "model", "text": reply}]
+                + [{"role": source, "text": brief}, {"role": "model", "text": reply}]
             )[-20:]
             await self.repository.save(editor.state)
             return {
@@ -183,3 +184,14 @@ class DesignSession:
                 "state": editor.state,
                 "rejected": tools.rejected,
             }
+
+    async def record_verdict(self, verdict: Json, request_id: str, brief: str) -> Json:
+        """Nivel 1 del bucle juez→agente: el veredicto entra en el estado
+        (nota actual de la habitación, historial y conversación) y por tanto
+        en el contexto de cualquier turno posterior del agente."""
+        async with self.lock:
+            state = await self.repository.load()
+            entry = record_verdict(state, verdict, request_id,
+                                   datetime.now(timezone.utc).isoformat(), brief)
+            await self.repository.save(state)
+            return {"entry": entry, "state": state}

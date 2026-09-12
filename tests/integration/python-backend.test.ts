@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { DesignerClient, type DesignerReply } from '../../src/app/designer/DesignerClient'
 import { SearchClient } from '../../src/app/search/SearchClient'
-import type { DesignerRoomState, DesignerVerdict } from '../../src/app/designer/actions'
+import type { DesignerJudgement, DesignerRoomState } from '../../src/app/designer/actions'
 
 const directory = mkdtempSync(join(tmpdir(), 'python-designer-'))
 let server: ChildProcess
@@ -69,11 +69,11 @@ describe('TypeScript clients against Python + real ADK tools', () => {
   test('DesignerClient receives state, tool actions, a real PNG verdict and persisted state', async () => {
     let state: DesignerRoomState | undefined
     let reply: DesignerReply | undefined
-    let verdict: DesignerVerdict | undefined
+    let judgement: DesignerJudgement | undefined
     const errors: string[] = []
     const client = new DesignerClient({
       onState: (value) => { state = value }, onReply: (value) => { reply = value },
-      onVerdict: (_id, value) => { verdict = value }, onError: (error) => errors.push(error), onConnection: () => {},
+      onJudgement: (value) => { judgement = value }, onError: (error) => errors.push(error), onConnection: () => {},
     }, `ws://127.0.0.1:${ports.designerPort}/ws`)
     async function until(condition: () => boolean) {
       for (let i = 0; i < 200 && !condition(); i++) await delay(20)
@@ -89,8 +89,12 @@ describe('TypeScript clients against Python + real ADK tools', () => {
       const sharp = (await import('sharp')).default
       const png = await sharp({ create: { width: 32, height: 32, channels: 3, background: 'white' } }).png().toBuffer()
       client.judge('silla', `data:image/png;base64,${png.toString('base64')}`)
-      await until(() => verdict !== undefined)
-      expect(verdict!.overall).toBe(7)
+      await until(() => judgement !== undefined)
+      expect(judgement!.verdict.overall).toBe(7)
+      expect(judgement!.mean).toBe(7)
+      // ConstantJudge da 7 = objetivo: el bucle para por nota alcanzada.
+      expect(judgement!.refining).toBe(false)
+      expect(judgement!.stopReason).toContain('objetivo')
       const saved = await fetch(`http://127.0.0.1:${ports.designerPort}/state`).then((r) => r.json())
       expect(saved.items).toEqual(reply!.state.items)
     } finally {

@@ -52,11 +52,21 @@ el mismo JSON. Los screenshots del juez se guardan antes de enviar al modelo.
 |---|---|
 | al conectar | `{type:'state', state}` |
 | `{type:'chat', requestId, text}` | `{type:'reply', requestId, reply, actions, state, rejected}` |
-| `{type:'judge', requestId, brief, image}` | `{type:'judge.result', requestId, verdict, evidence}` |
+| `{type:'judge', requestId, brief, image}` | `{type:'judge.result', requestId, verdict, mean, target, judgeText, refining, round, stopReason, evidence}` |
 | error | `{type:'error', requestId, error}` |
 
 HTTP: `GET /healthz`, `GET /metrics`, `GET /state`. Otros clientes reciben
 un mensaje `state` tras los cambios. `image` debe ser PNG base64 o data URL.
+
+**Bucle juez→agente:** cada veredicto se registra en el estado (nota actual
+de la habitación, historial y conversación en lenguaje natural, visible para
+el agente en turnos posteriores). Si la nota media —media de cohesión,
+colores, estilo y adherencia— queda bajo `DESIGNER_JUDGE_TARGET` (7 por
+defecto), el servidor relanza al agente con las notas del juez como encargo
+(`{type:'reply', refinement: true, round}` en el mismo socket) y el cliente
+repite aplicar→capturar→juzgar. El paro primario es alcanzar el objetivo;
+el freno de seguridad es el estancamiento (`DESIGNER_JUDGE_PATIENCE` rondas
+seguidas sin mejorar la media). El estado incluye `verdict` (nota actual).
 
 | Variable | Valor por defecto |
 |---|---|

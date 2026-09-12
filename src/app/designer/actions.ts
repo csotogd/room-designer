@@ -40,6 +40,8 @@ export interface DesignerRoomState {
   room: DesignerRoomSpec | null
   openings: DesignerOpening[]
   items: DesignerItem[]
+  /** Última nota del juez sobre la habitación actual (si ya fue juzgada). */
+  verdict?: DesignerVerdict & { mean: number; at: string }
 }
 
 export interface DesignerVerdict {
@@ -49,6 +51,23 @@ export interface DesignerVerdict {
   adherence: number
   overall: number
   notes: string
+}
+
+/** Resultado completo de un juicio: veredicto + estado del bucle de refinamiento. */
+export interface DesignerJudgement {
+  requestId: string
+  verdict: DesignerVerdict
+  /** Nota agregada de la habitación (media de las cuatro métricas). */
+  mean: number
+  /** Objetivo del bucle: se refina hasta alcanzarlo. */
+  target: number
+  /** El veredicto en una frase, como lo ve también el agente. */
+  judgeText: string
+  /** true: el servidor está relanzando al agente con estas notas. */
+  refining: boolean
+  round: number | null
+  /** Motivo del paro cuando no se refina (objetivo alcanzado o estancamiento). */
+  stopReason: string | null
 }
 
 /** Un estado completo, expresado como las acciones que lo reconstruyen. */

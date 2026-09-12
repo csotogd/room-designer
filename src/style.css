@@ -1555,3 +1555,58 @@ input[type='range'] {
   width: 15px;
   height: 15px;
 }
+
+/* ── Bucle juez ↔ agente ─────────────────────────────────────────── */
+
+#chat-scores {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 0 14px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.score-mean {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 2px;
+}
+
+.score-chip {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+
+.chat-bubble.judge {
+  align-self: flex-start;
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-soft);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble.agent-refine {
+  align-self: flex-start;
+  background: var(--paper);
+  border: 1px dashed var(--line-strong);
+  border-bottom-left-radius: 4px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.verdict-loop {
+  margin-top: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}

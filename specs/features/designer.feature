@@ -47,3 +47,18 @@ Feature: Conversational room designer
     Given a rendered screenshot of the room
     When the judge evaluates it against the brief
     Then the verdict carries cohesion, colors, style and adherence scores
+
+  Scenario: The judge's verdict becomes memory the agent can read
+    Given a judged room
+    When the verdict is recorded
+    Then the room carries its current grades and the judge speaks in the conversation
+
+  Scenario: The judge and the agent iterate until the mean grade reaches the target
+    Given a room scored below the target
+    When the judgement arrives
+    Then the server relaunches the agent with the judge's notes until the mean reaches the target
+
+  Scenario: A refinement loop that stops improving is stopped honestly
+    Given consecutive verdicts without improvement
+    When the next judgement arrives
+    Then the loop stops with the stagnation reason instead of iterating forever

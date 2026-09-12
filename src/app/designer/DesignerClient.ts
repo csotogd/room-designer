@@ -1,4 +1,4 @@
-import type { DesignerAction, DesignerRoomState, DesignerVerdict } from './actions'
+import type { DesignerAction, DesignerJudgement, DesignerRoomState, DesignerVerdict } from './actions'
 
 export interface DesignerReply {
   requestId: string
@@ -6,12 +6,17 @@ export interface DesignerReply {
   actions: DesignerAction[]
   state: DesignerRoomState
   rejected: { reason: string }[]
+  /** Encargo del usuario contra el que debe juzgarse la escena resultante. */
+  judgeBrief?: string
+  /** true: es un turno del bucle juez→agente, no una respuesta al usuario. */
+  refinement?: boolean
+  round?: number
 }
 
 export interface DesignerEvents {
   onState(state: DesignerRoomState): void
   onReply(reply: DesignerReply): void
-  onVerdict(requestId: string, verdict: DesignerVerdict): void
+  onJudgement(judgement: DesignerJudgement): void
   onError(error: string): void
   onConnection(connected: boolean): void
 }
@@ -62,7 +67,17 @@ export class DesignerClient {
       if (message.type === 'state') this.events.onState(message.state as DesignerRoomState)
       else if (message.type === 'reply') this.events.onReply(message as unknown as DesignerReply)
       else if (message.type === 'judge.result') {
-        this.events.onVerdict(String(message.requestId), message.verdict as DesignerVerdict)
+        const verdict = message.verdict as DesignerVerdict
+        this.events.onJudgement({
+          requestId: String(message.requestId),
+          verdict,
+          mean: typeof message.mean === 'number' ? message.mean : verdict.overall,
+          target: typeof message.target === 'number' ? message.target : 7,
+          judgeText: typeof message.judgeText === 'string' ? message.judgeText : verdict.notes,
+          refining: message.refining === true,
+          round: typeof message.round === 'number' ? message.round : null,
+          stopReason: typeof message.stopReason === 'string' ? message.stopReason : null,
+        })
       } else if (message.type === 'error') this.events.onError(String(message.error))
     })
   }

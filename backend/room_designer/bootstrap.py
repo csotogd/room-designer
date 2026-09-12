@@ -77,6 +77,8 @@ def designer_app(env=None):
         env.get("DESIGNER_TOKEN", ""),
         tuple(filter(None, env.get("DESIGNER_ALLOWED_ORIGINS", "").split(","))),
         lifespan,
+        judge_target=float(env.get("DESIGNER_JUDGE_TARGET", "7")),
+        judge_patience=max(1, int(env.get("DESIGNER_JUDGE_PATIENCE", "2"))),
     )
 
 
