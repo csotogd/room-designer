@@ -17,6 +17,19 @@ from room_designer.search.embeddings import HashingEmbedder
 from room_designer.search.index import SearchIndex
 
 
+class FixtureJudge(ConstantJudge):
+    """A scripted plateau then improvement for the cross-language loop test."""
+
+    def __init__(self):
+        self.scores = iter([5, 5, 5, 7.5])
+
+    async def judge(self, brief, png):
+        result = await super().judge(brief, png)
+        if "prueba del bucle" in brief:
+            result.update(dict.fromkeys(("cohesion", "colors", "style", "adherence"), next(self.scores)))
+        return result
+
+
 async def main(directory):
     catalog = {
         "chair-1": {
@@ -48,7 +61,7 @@ async def main(directory):
         search = uvicorn.Server(uvicorn.Config(create_search_app(index), log_level="error"))
         designer = uvicorn.Server(
             uvicorn.Config(
-                create_designer_app(session, ConstantJudge(), LocalScreenshots(directory), "fake"),
+                create_designer_app(session, FixtureJudge(), LocalScreenshots(directory), "fake"),
                 log_level="error",
             )
         )

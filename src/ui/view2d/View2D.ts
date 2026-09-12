@@ -89,7 +89,7 @@ export class View2D {
     ctx.lineWidth = 1
     for (let x = this.offsetX % step; x < w; x += step) {
       const isMeter = Math.round((x - this.offsetX) / this.scale) === (x - this.offsetX) / this.scale
-      ctx.strokeStyle = isMeter ? '#ddd6ca' : '#eae5db'
+      ctx.strokeStyle = isMeter ? '#dddbd6' : '#eeece8'
       ctx.beginPath()
       ctx.moveTo(x, 0)
       ctx.lineTo(x, h)
@@ -97,7 +97,7 @@ export class View2D {
     }
     for (let y = this.offsetY % step; y < h; y += step) {
       const isMeter = Math.round((y - this.offsetY) / this.scale) === (y - this.offsetY) / this.scale
-      ctx.strokeStyle = isMeter ? '#ddd6ca' : '#eae5db'
+      ctx.strokeStyle = isMeter ? '#dddbd6' : '#eeece8'
       ctx.beginPath()
       ctx.moveTo(0, y)
       ctx.lineTo(w, y)
@@ -115,7 +115,7 @@ export class View2D {
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
     })
     ctx.closePath()
-    ctx.fillStyle = '#efe9dd'
+    ctx.fillStyle = '#efece6'
     ctx.fill()
   }
 
@@ -137,7 +137,7 @@ export class View2D {
       const segment = wall.segment()
       const a = this.toScreen(segment.pointAtDistance(opening.offset))
       const b = this.toScreen(segment.pointAtDistance(opening.end))
-      ctx.strokeStyle = '#f4f1ec'
+      ctx.strokeStyle = '#f8f7f4'
       ctx.lineWidth = Math.max(wall.thickness * this.scale, 5) + 2
       ctx.beginPath()
       ctx.moveTo(a[0], a[1])

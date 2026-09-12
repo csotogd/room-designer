@@ -1,224 +1,363 @@
+import { SceneSync } from '../../app/designer/SceneSync'
+import { equal } from '../../app/designer/scene'
+import type { SceneSnapshot } from '../../app/designer/actions'
 import { DesignerClient, type DesignerReply } from '../../app/designer/DesignerClient'
-import { stateToActions, type DesignerAction, type DesignerJudgement, type DesignerRoomState } from '../../app/designer/actions'
+import { stateToActions, type DesignerAction, type DesignerJudgement, type DesignerRoomState, type DesignerScore } from '../../app/designer/actions'
 
-/**
- * Panel de chat del diseñador (columna derecha): le pides "créame una
- * oficina para 4, moderna" y aplica las acciones del microservicio a la
- * escena. Tras aplicar, captura un screenshot y se lo manda al juez VLM.
- *
- * El juez y el agente CONVERSAN aquí, a la vista: el veredicto aparece como
- * mensaje del juez en lenguaje natural, y si la nota media no llega al
- * objetivo el servidor relanza al agente (rondas de refinamiento) hasta
- * alcanzarlo o estancarse. La nota actual de la habitación vive en el
- * marcador de la cabecera.
- */
 export interface ChatPanelHost {
-  /** Aplica acciones al dominio; devuelve cuántas entraron y cuáles no. */
   apply(actions: readonly DesignerAction[]): { applied: number; skipped: { reason: string }[] }
-  /** Screenshot PNG (dataURL) de la escena 3D actual. */
-  screenshot(): string
-  /** ¿Hay ya una escena con muebles? (para no restaurar encima). */
+  screenshot(): string | Promise<string>
   sceneIsEmpty(): boolean
+  snapshot(): SceneSnapshot
+  reconcile(scene: SceneSnapshot): void
 }
 
+/** User-visible conversation and capture handoff; the server owns the refinement policy. */
 export class ChatPanel {
+  private readonly sync: SceneSync
   private readonly client: DesignerClient
   private readonly messages: HTMLElement
   private readonly input: HTMLInputElement
   private readonly status: HTMLElement
   private readonly scores: HTMLElement | null
-  /** Brief por requestId: el juez puntúa contra el brief de SU turno. */
-  private readonly briefs = new Map<string, string>()
+  private readonly stopButton: HTMLButtonElement | null
+  private pendingRequest: string | null = null
+  private runId: string | null = null
+  private revision: string | undefined
+  private generation = 0
+  private captureTimer: number | undefined
   private restored = false
+  private sceneSynced = false
+  private applying = false
 
-  constructor(
-    private readonly root: Document,
-    private readonly host: ChatPanelHost,
-  ) {
+  constructor(private readonly root: Document, private readonly host: ChatPanelHost) {
     this.messages = root.querySelector<HTMLElement>('#chat-messages')!
     this.input = root.querySelector<HTMLInputElement>('#chat-input')!
     this.status = root.querySelector<HTMLElement>('#chat-status')!
     this.scores = root.querySelector<HTMLElement>('#chat-scores')
-
+    this.stopButton = root.querySelector<HTMLButtonElement>('#chat-stop')
     this.client = new DesignerClient({
-      onConnection: (connected) => this.setStatus(connected),
+      onConnection: (connected) => {
+        this.sync?.connection(connected)
+        this.status.textContent = connected ? 'Disponible para ayudarte' : 'Sin conexión'
+        this.status.classList.toggle('online', connected)
+        if (!connected) {
+          if (this.runId || this.pendingRequest) this.addBubble('assistant', 'El ciclo se ha detenido al perder la conexión.')
+          this.clearCycle()
+          this.restored = false
+        }
+      },
       onState: (state) => this.syncFromState(state),
       onReply: (reply) => this.onReply(reply),
       onJudgement: (judgement) => this.onJudgement(judgement),
-      onError: (error) => {
-        this.removeThinking()
+      onEdit: (result) => this.sync.result(result),
+      onStopped: (runId, reason) => {
+        if (runId !== this.runId) return
+        this.clearCycle()
+        this.addBubble('assistant', reason)
+      },
+      onError: (error, context) => {
+        if (this.sync?.error(context?.requestId, error)) return
+        if (context?.state) this.sync.receive(context.state)
+        if (context?.runId && context.runId !== this.runId && context.requestId !== this.pendingRequest) return
+        if (context?.requestId && this.pendingRequest && context.requestId !== this.pendingRequest) return
+        this.clearCycle()
         this.addBubble('assistant', `⚠ ${error}`)
       },
     })
-
-    const form = root.querySelector<HTMLFormElement>('#chat-form')!
-    form.addEventListener('submit', (event) => {
+    const syncStatus = root.createElement('div')
+    syncStatus.id = 'chat-sync'
+    syncStatus.setAttribute('role', 'status')
+    const label = root.createElement('span')
+    const mine = root.createElement('button')
+    const shared = root.createElement('button')
+    mine.type = shared.type = 'button'
+    mine.textContent = 'Conservar mis cambios'
+    shared.textContent = 'Usar versión compartida'
+    mine.hidden = shared.hidden = true
+    mine.addEventListener('click', () => this.sync.resolve(true))
+    shared.addEventListener('click', () => this.sync.resolve(false))
+    syncStatus.append(label, mine, shared)
+    this.messages.after(syncStatus)
+    this.sync = new SceneSync({
+      snapshot: () => host.snapshot(),
+      apply: (scene) => this.reconcileScene(scene),
+      send: (edit) => this.client.edit(edit),
+      status: (message, conflict) => {
+        label.textContent = message
+        mine.hidden = shared.hidden = !conflict
+      },
+      saved: (state) => {
+        this.revision = state.revision
+        if (!this.sync.hasPending) this.renderScores(state)
+      },
+    }, root.defaultView?.sessionStorage, `room-designer:manual:${this.client.endpoint}`)
+    root.addEventListener('pointerdown', (event) => {
+      if ((event.target as Element | null)?.closest?.('#container3d, #canvas2d')) this.sync.beginGesture()
+    })
+    root.addEventListener('pointerup', () => this.sync.endGesture())
+    root.addEventListener('pointercancel', () => this.sync.endGesture())
+    root.querySelector<HTMLFormElement>('#chat-form')!.addEventListener('submit', async (event) => {
       event.preventDefault()
       const text = this.input.value.trim()
       if (!text) return
-      this.addBubble('user', text)
-      this.input.value = ''
-      this.addThinking()
-      const requestId = this.client.chat(text)
-      this.briefs.set(requestId, text)
+      if (!this.client.connected) {
+        this.addBubble('assistant', 'El servicio de diseño no está conectado.')
+        return
+      }
+      this.clearCycle()
+      const generation = this.generation
+      this.addThinking('Guardando tus cambios antes de diseñar…')
+      this.showStop(true)
+      try {
+        await this.sync.flush()
+        if (generation !== this.generation) return
+        this.addBubble('user', text)
+        this.input.value = ''
+        this.pendingRequest = this.client.chat(text, this.sync.currentRevision)
+        this.addThinking('Diseñando…')
+      } catch (error) {
+        if (generation !== this.generation) return
+        this.clearCycle()
+        this.addBubble('assistant', String(error))
+      }
     })
-
-    const toggle = root.querySelector<HTMLElement>('#chat-toggle')
-    toggle?.addEventListener('click', () => {
-      root.querySelector('#chat')?.classList.toggle('collapsed')
+    this.stopButton?.addEventListener('click', () => this.stop('Has detenido el ciclo.'))
+    root.querySelector('#chat-toggle')?.addEventListener('click', () => {
+      this.setOpen(false)
+      root.querySelector<HTMLElement>('#chat-reopen')?.focus()
     })
-  }
-
-  private setStatus(connected: boolean): void {
-    this.status.textContent = connected ? 'conectado' : 'sin conexión'
-    this.status.classList.toggle('online', connected)
-  }
-
-  /**
-   * Mensajes de estado del servicio: al conectar restaura la sala guardada;
-   * durante la sesión (broadcast de turnos de OTRAS pestañas) reconcilia la
-   * escena si diverge. El estado del servicio es la fuente de verdad.
-   */
-  private syncFromState(state: DesignerRoomState): void {
-    this.renderScoreboard(state.verdict ?? null)
-    if (!state.room) return
-    const firstState = !this.restored
-    this.restored = true
-    if (firstState) {
-      // Estado inicial al conectar: solo se restaura sobre escena vacía
-      // (no pisamos lo que el usuario ya haya montado a mano).
-      if (!this.host.sceneIsEmpty()) return
-      const report = this.host.apply(stateToActions(state))
-      this.addBubble(
-        'assistant',
-        `He restaurado la habitación guardada (${report.applied} elementos del fichero del diseñador).`,
-      )
-      return
+    root.querySelector('#chat-reopen')?.addEventListener('click', () => {
+      this.setOpen(true)
+      this.input.focus()
+    })
+    for (const suggestion of root.querySelectorAll<HTMLButtonElement>('[data-prompt]')) {
+      suggestion.addEventListener('click', () => {
+        this.input.value = suggestion.dataset.prompt ?? ''
+        this.input.focus()
+      })
     }
-    // Broadcast de un turno de OTRA pestaña: el estado del servicio manda.
-    this.rebuildFromState(state, 'Otra sesión ha actualizado la habitación; la he sincronizado.')
+    const compact = window.matchMedia?.('(max-width: 1099px)')
+    if (compact?.matches) this.setOpen(false)
+    compact?.addEventListener('change', ({ matches }) => {
+      if (matches) this.setOpen(false)
+    })
   }
 
-  private rebuildFromState(state: DesignerRoomState, note?: string): void {
-    const report = this.host.apply(stateToActions(state))
-    if (note) this.addBubble('assistant', note)
-    if (report.skipped.length > 0) {
-      this.addBubble('assistant', `⚠ ${report.skipped.length} elementos no se pudieron reconstruir.`)
+  setOpen(open: boolean): void {
+    const panel = this.root.querySelector<HTMLElement>('#chat')!
+    panel.classList.toggle('collapsed', !open)
+    panel.inert = !open
+    const reopen = this.root.querySelector<HTMLElement>('#chat-reopen')
+    if (reopen) reopen.hidden = open
+    if (open && window.matchMedia?.('(max-width: 760px)').matches) {
+      const catalog = this.root.querySelector<HTMLElement>('#catalog')
+      if (catalog) {
+        catalog.classList.add('collapsed')
+        catalog.inert = true
+      }
+      const catalogReopen = this.root.querySelector<HTMLElement>('#catalog-reopen')
+      if (catalogReopen) catalogReopen.hidden = false
+    }
+  }
+
+  /** Manual edits invalidate the relationship between server revision and rendered scene. */
+  onSceneChanged(): void {
+    if (this.applying) return
+    this.sceneSynced = false
+    if (this.runId || this.pendingRequest) this.stop('He detenido el ciclo porque has editado la habitación.')
+    this.renderScores({ version: 1, room: null, openings: [], items: [] })
+    this.sync.changed()
+  }
+
+  private reconcileScene(scene: SceneSnapshot): void {
+    if (!scene.room) return
+    let current: SceneSnapshot | null = null
+    try { current = this.host.snapshot() } catch { /* a server restore can replace an unsupported local plan */ }
+    if (current && equal(current, scene)) return
+    this.applying = true
+    try {
+      if (!current || !equal(current.room, scene.room) || !equal(current.openings, scene.openings)) {
+        const report = this.host.apply([{ kind: 'setRoom', room: scene.room, openings: scene.openings }])
+        if (report.skipped.length) throw new Error('No pude reconstruir el plano compartido.')
+      }
+      this.host.reconcile(scene)
+      this.sceneSynced = true
+    } finally { this.applying = false }
+  }
+
+  private apply(actions: readonly DesignerAction[]) {
+    this.applying = true
+    try { return this.host.apply(actions) } finally { this.applying = false }
+  }
+
+  private syncFromState(state: DesignerRoomState): void {
+    const first = !this.restored
+    this.restored = true
+    if ((first || (!this.runId && !this.pendingRequest)) && state.conversation?.length) {
+      this.messages.replaceChildren()
+      for (const turn of state.conversation) {
+        const who = turn.role === 'judge' ? 'judge' : turn.role === 'user' ? 'user' : turn.round ? 'agent-refine' : 'assistant'
+        const label = who === 'judge' ? 'Juez: ' : who === 'agent-refine' ? `Agente (ronda ${turn.round}): ` : ''
+        this.addBubble(who, label + turn.text)
+      }
+    }
+    if (!first && state.revision !== this.revision && !this.sync.hasPending) this.clearCycle()
+    try {
+      this.sync.receive(state, first && !this.host.sceneIsEmpty())
+      this.sceneSynced = !this.sync.hasPending
+    } catch (error) {
+      this.addBubble('assistant', String(error))
     }
   }
 
   private onReply(reply: DesignerReply): void {
+    if (reply.refinement ? reply.runId !== this.runId : reply.requestId !== this.pendingRequest) return
+    this.pendingRequest = null
+    this.runId = reply.runId
     this.removeThinking()
-    let skippedCount = 0
     try {
-      if (reply.actions.some((a) => a.kind === 'setRoom')) {
-        // setRoom recrea el proyecto: reconstruir desde el estado completo
-        // del servicio garantiza que los muebles conservados sobreviven.
-        const report = this.host.apply(stateToActions(reply.state))
-        skippedCount = report.skipped.length
-      } else {
-        const report = this.host.apply(reply.actions)
-        skippedCount = report.skipped.length
+      const actions = !this.sceneSynced || reply.actions.some((a) => a.kind === 'setRoom')
+        ? stateToActions(reply.state) : reply.actions
+      const report = this.apply(actions)
+      if (report.skipped.length) {
+        this.stop(`No pude aplicar ${report.skipped.length} cambios; la escena necesita revisión antes de evaluarla.`)
+        this.onSceneChanged()
+        return
       }
+      this.sceneSynced = true
+      this.revision = reply.state.revision
     } catch (error) {
-      this.addBubble('assistant', `⚠ No pude aplicar los cambios: ${String(error)}`)
+      this.stop(`No pude aplicar los cambios: ${String(error)}`)
+      this.onSceneChanged()
       return
     }
-    let text = reply.reply
-    if (skippedCount > 0) {
-      text += ` (${skippedCount} acciones no se pudieron aplicar en la escena.)`
+    this.addBubble(reply.refinement ? 'agent-refine' : 'assistant',
+      reply.refinement ? `Agente (ronda ${reply.round}): ${reply.reply}` : reply.reply)
+    this.sync.receive(reply.state)
+    this.renderScores(reply.state)
+    if (!reply.state.room) {
+      this.stop('Crea una habitación para que el juez pueda evaluarla.')
+      return
     }
-    // Los turnos del bucle juez→agente se distinguen del diálogo con el usuario.
-    if (reply.refinement) {
-      this.addBubble('agent-refine', `Agente (ronda ${reply.round ?? '?'}): ${text}`)
-    } else {
-      this.addBubble('assistant', text)
-    }
+    // Even a turn without actions is evaluated; only the server decides whether the target was reached.
+    const generation = ++this.generation
+    this.addThinking('Preparando la imagen para el juez…')
+    this.showStop(true)
+    this.captureTimer = window.setTimeout(() => { void this.capture(reply, generation) }, 100)
+  }
 
-    // El juez ve la escena una vez colocados los modelos (los GLB cargan
-    // async). El brief es el del ENCARGO original: en las rondas de
-    // refinamiento lo fija el servidor (judgeBrief), nunca el texto del juez.
-    const brief = reply.judgeBrief ?? this.briefs.get(reply.requestId) ?? ''
-    this.briefs.delete(reply.requestId)
-    if (reply.actions.length > 0 && brief) {
-      window.setTimeout(() => {
-        const image = this.host.screenshot()
-        if (image.length > 100) this.client.judge(brief, image)
-      }, 2500)
-    } else if (reply.refinement) {
-      // Ronda sin cambios aplicables: el bucle no puede seguir mejorando.
-      this.addBubble('judge', 'El agente no encontró más cambios que aplicar; dejo la nota como está.')
+  private async capture(reply: DesignerReply, generation: number): Promise<void> {
+    try {
+      const image = await this.host.screenshot()
+      if (generation !== this.generation || reply.runId !== this.runId) return
+      if (image.length < 100) throw new Error('No se pudo capturar la habitación.')
+      this.addThinking('El juez está evaluando la habitación…')
+      this.client.judge(image, reply.evaluation)
+    } catch (error) {
+      if (generation === this.generation) this.stop(`No pude preparar la imagen: ${String(error)}`)
     }
   }
 
-  /** El veredicto llega como mensaje del juez, en lenguaje natural. */
   private onJudgement(judgement: DesignerJudgement): void {
-    const { verdict } = judgement
+    if (judgement.runId !== this.runId || judgement.revision !== this.revision) return
+    this.removeThinking()
     const bubble = this.root.createElement('div')
     bubble.className = 'chat-bubble judge verdict'
     const title = this.root.createElement('div')
     title.className = 'verdict-title'
-    title.textContent = `Juez · ${judgement.mean}/10 (objetivo ${judgement.target})`
+    title.textContent = `Juez · ${this.grade(judgement.mean)}/10 (objetivo ${judgement.target})`
     bubble.append(title)
-    const chips = this.root.createElement('div')
-    chips.className = 'verdict-chips'
-    for (const [label, value] of [
-      ['cohesión', verdict.cohesion],
-      ['colores', verdict.colors],
-      ['estilo', verdict.style],
-      ['brief', verdict.adherence],
-    ] as const) {
-      const chip = this.root.createElement('span')
-      chip.className = 'verdict-chip'
-      chip.textContent = `${label} ${value}`
-      chips.append(chip)
-    }
-    bubble.append(chips)
-    if (verdict.notes) {
-      const notes = this.root.createElement('div')
-      notes.className = 'verdict-notes'
-      notes.textContent = verdict.notes
-      bubble.append(notes)
-    }
+    this.appendChips(bubble, judgement.verdict, 'verdict')
+    const notes = this.root.createElement('div')
+    notes.className = 'verdict-notes'
+    notes.textContent = judgement.verdict.notes
+    bubble.append(notes)
     const status = this.root.createElement('div')
     status.className = 'verdict-loop'
     status.textContent = judgement.refining
-      ? `↻ Nota bajo el objetivo: le paso mis notas al agente (ronda ${judgement.round}).`
-      : `✓ ${judgement.stopReason ?? 'evaluación registrada'}`
+      ? `Voy a pedir al agente otra mejora (ronda ${(judgement.round ?? 0) + 1}).`
+      : `✓ ${judgement.stopReason}`
     bubble.append(status)
+    if (judgement.feedback) {
+      const details = this.root.createElement('details')
+      const summary = this.root.createElement('summary')
+      summary.textContent = 'Ver lo que el juez le pide al agente'
+      details.append(summary, this.root.createTextNode(judgement.feedback))
+      bubble.append(details)
+    }
     this.messages.append(bubble)
+    this.renderScores(judgement.state)
     this.scroll()
-    this.renderScoreboard({ ...verdict, mean: judgement.mean, at: '' })
-    if (judgement.refining) this.addThinking()
+    if (judgement.refining) this.addThinking('El agente está aplicando las observaciones del juez…')
+    else this.clearCycle()
   }
 
-  /** Marcador persistente: las notas que lleva la habitación actual. */
-  private renderScoreboard(verdict: (DesignerRoomState['verdict']) | null): void {
+  private renderScores(state: DesignerRoomState): void {
     if (!this.scores) return
-    if (!verdict) {
-      this.scores.hidden = true
-      return
-    }
     this.scores.hidden = false
     this.scores.replaceChildren()
+    const current = state.verdict
+    const previous = state.verdicts?.at(-1)
     const mean = this.root.createElement('span')
     mean.className = 'score-mean'
-    mean.textContent = `${verdict.mean}/10`
+    mean.textContent = current ? `${this.grade(current.mean)}/10 · objetivo ${current.target ?? 7}` : 'Pendiente de evaluación'
     this.scores.append(mean)
-    for (const [label, value] of [
-      ['cohesión', verdict.cohesion],
-      ['colores', verdict.colors],
-      ['estilo', verdict.style],
-      ['brief', verdict.adherence],
-    ] as const) {
-      const chip = this.root.createElement('span')
-      chip.className = 'score-chip'
-      chip.textContent = `${label} ${value}`
-      this.scores.append(chip)
+    if (current) this.appendChips(this.scores, current, 'score')
+    else if (previous) {
+      const last = this.root.createElement('span')
+      last.className = 'score-previous'
+      last.textContent = `Última versión evaluada: ${this.grade(previous.mean)}/10`
+      this.scores.append(last)
+    }
+    if (state.verdicts?.length) {
+      const history = this.root.createElement('details')
+      const summary = this.root.createElement('summary')
+      summary.textContent = 'Evolución de las notas'
+      history.append(summary)
+      for (const score of state.verdicts) {
+        const row = this.root.createElement('div')
+        row.textContent = `${new Date(score.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ronda ${score.round ?? 0}: ${this.grade(score.mean)}/10 — ${score.notes}`
+        row.title = `Cohesión ${score.cohesion} · colores ${score.colors} · estilo ${score.style} · brief ${score.adherence}`
+        history.append(row)
+      }
+      this.scores.append(history)
     }
   }
 
+  private appendChips(parent: HTMLElement, verdict: Pick<DesignerScore, 'cohesion' | 'colors' | 'style' | 'adherence'>, prefix: string): void {
+    const chips = this.root.createElement('div')
+    chips.className = 'verdict-chips'
+    for (const [label, value] of [['cohesión', verdict.cohesion], ['colores', verdict.colors], ['estilo', verdict.style], ['brief', verdict.adherence]] as const) {
+      const chip = this.root.createElement('span')
+      chip.className = `${prefix}-chip`
+      chip.textContent = `${label} ${value}`
+      chips.append(chip)
+    }
+    parent.append(chips)
+  }
+
+  private grade(value: number): string { return String(Math.round(value * 1000) / 1000) }
+
+  private stop(reason: string): void {
+    this.client.stop(this.runId ?? undefined)
+    this.clearCycle()
+    this.addBubble('assistant', reason)
+  }
+
+  private clearCycle(): void {
+    ++this.generation
+    window.clearTimeout(this.captureTimer)
+    this.runId = null
+    this.pendingRequest = null
+    this.removeThinking()
+    this.showStop(false)
+  }
+
+  private showStop(visible: boolean): void { if (this.stopButton) this.stopButton.hidden = !visible }
+
   private addBubble(who: 'user' | 'assistant' | 'judge' | 'agent-refine', text: string): void {
+    if (who === 'user') this.root.querySelector<HTMLElement>('#chat-welcome')?.setAttribute('hidden', '')
     const bubble = this.root.createElement('div')
     bubble.className = `chat-bubble ${who}`
     bubble.textContent = text
@@ -226,20 +365,16 @@ export class ChatPanel {
     this.scroll()
   }
 
-  private addThinking(): void {
+  private addThinking(text: string): void {
+    this.removeThinking()
     const bubble = this.root.createElement('div')
     bubble.className = 'chat-bubble assistant thinking'
     bubble.id = 'chat-thinking'
-    bubble.textContent = 'Diseñando…'
+    bubble.textContent = text
     this.messages.append(bubble)
     this.scroll()
   }
 
-  private removeThinking(): void {
-    this.root.querySelector('#chat-thinking')?.remove()
-  }
-
-  private scroll(): void {
-    this.messages.scrollTop = this.messages.scrollHeight
-  }
+  private removeThinking(): void { this.root.querySelector('#chat-thinking')?.remove() }
+  private scroll(): void { this.messages.scrollTop = this.messages.scrollHeight }
 }

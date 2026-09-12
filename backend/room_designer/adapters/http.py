@@ -1,6 +1,5 @@
 """Transport contract compatible with the existing browser clients."""
 
-import asyncio
 import hmac
 import json
 import logging
@@ -15,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from room_designer.adapters.vision import decode_png
-from room_designer.application.critique import plan_refinement, verdict_text
+from room_designer.application.workflow import DesignWorkflow
 
 log = logging.getLogger(__name__)
 MAX_WS_BYTES = 16 * 1024 * 1024
@@ -180,13 +179,18 @@ def allowed_origin(origin: str | None, allowed: tuple[str, ...]) -> bool:
 
 
 def create_designer_app(
-    session, judge, screenshots, provider: str, token="", allowed_origins=(), lifespan=None,
-    judge_target: float = 7.0, judge_patience: int = 2,
+    session,
+    judge,
+    screenshots,
+    provider: str,
+    token="",
+    allowed_origins=(),
+    lifespan=None,
+    judge_target: float = 7.0,
 ):
     app, metrics = base_app(lifespan)
     clients: set[WebSocket] = set()
-    # Serialize complete turns including broadcasts so all clients see the same action order.
-    turn_lock = asyncio.Lock()
+    workflow = DesignWorkflow(session, judge, screenshots, judge_target)
 
     async def broadcast_state(origin: WebSocket, state):
         for peer in list(clients - {origin}):
@@ -200,6 +204,8 @@ def create_designer_app(
         return {
             "ok": True,
             "framework": "google-adk",
+            "captureProtocol": "revision-v1",
+            "judgeTarget": judge_target,
             "brain": provider,
             "picker": provider,
             "judge": provider,
@@ -225,6 +231,14 @@ def create_designer_app(
             await socket.close(4403, "origin no permitido")
             return
         clients.add(socket)
+        owner = uuid4().hex
+
+        async def emit(message):
+            # Observers get persisted conversation/scores as well as geometry.
+            if "state" in message:
+                await broadcast_state(socket, message["state"])
+            await socket.send_json(message)
+
         try:
             try:
                 await socket.send_json({"type": "state", "state": await session.state()})
@@ -252,55 +266,47 @@ def create_designer_app(
                         brief = message.get("text")
                         if not isinstance(brief, str) or not brief.strip() or len(brief) > 20000:
                             raise ValueError("text debe contener entre 1 y 20000 caracteres")
-                        async with turn_lock:
-                            result = await session.chat(brief, request_id)
-                            await socket.send_json({"type": "reply", "requestId": request_id,
-                                                    "judgeBrief": brief, **result})
+                        revision = message.get("revision")
+                        if revision is not None and not isinstance(revision, str):
+                            raise ValueError("revision inválida")
+                        await workflow.start(owner, brief, request_id, emit, revision)
+                    elif operation == "edit":
+                        revision = message.get("baseRevision")
+                        if revision is not None and not isinstance(revision, str):
+                            raise ValueError("baseRevision inválida")
+                        result = await workflow.edit(
+                            request_id, revision, message.get("base"), message.get("desired")
+                        )
+                        await socket.send_json(result)
+                        if result["type"] == "edit.result":
                             await broadcast_state(socket, result["state"])
                     elif operation == "judge":
-                        brief, image = message.get("brief"), message.get("image")
-                        if not isinstance(brief, str) or len(brief) > 20000 or not isinstance(image, str):
-                            raise ValueError("brief e image deben ser texto")
-                        png = decode_png(image)
-                        async with asyncio.timeout(180):
-                            evidence = await screenshots.save(request_id, png)
-                            verdict = await judge.judge(brief, png)
-                        # Nivel 1: el veredicto entra en el estado (nota de la
-                        # habitación + conversación) y lo verá cualquier turno.
-                        recorded = await session.record_verdict(verdict, request_id, brief)
-                        entry = recorded["entry"]
-                        # Nivel 2: mientras la media < objetivo, el juez habla
-                        # con el agente — el paro primario es la nota, no un
-                        # contador; el freno es la falta de mejora sostenida.
-                        plan, stop_reason = plan_refinement(recorded["state"], judge_target, judge_patience)
-                        await socket.send_json({
-                            "type": "judge.result",
-                            "requestId": request_id,
-                            "verdict": verdict,
-                            "mean": entry["mean"],
-                            "target": judge_target,
-                            "judgeText": verdict_text(verdict, entry["mean"]),
-                            "evidence": evidence,
-                            "refining": plan is not None,
-                            "round": plan.round if plan else None,
-                            "stopReason": None if plan else stop_reason,
-                        })
-                        await broadcast_state(socket, recorded["state"])
-                        if plan:
-                            async with turn_lock:
-                                refine_id = f"{request_id}-r{plan.round}"
-                                result = await session.chat(plan.brief, refine_id, source="judge")
-                                # El front sigue juzgando contra el ENCARGO
-                                # ORIGINAL del usuario, no contra el del juez.
-                                await socket.send_json({
-                                    "type": "reply",
-                                    "requestId": refine_id,
-                                    "refinement": True,
-                                    "round": plan.round,
-                                    "judgeBrief": brief,
-                                    **result,
-                                })
-                                await broadcast_state(socket, result["state"])
+                        image = message.get("image")
+                        run_id, revision = message.get("runId"), message.get("revision")
+                        if (
+                            not isinstance(image, str)
+                            or not isinstance(run_id, str)
+                            or not isinstance(revision, str)
+                        ):
+                            raise ValueError(
+                                "La captura debe incluir image, runId y revision de la respuesta"
+                            )
+                        accepted = await workflow.capture(
+                            owner, run_id, revision, decode_png(image), request_id
+                        )
+                        if not accepted:
+                            await socket.send_json(
+                                {
+                                    "type": "judge.ignored",
+                                    "requestId": request_id,
+                                    "reason": "Captura antigua, duplicada o de otro ciclo",
+                                }
+                            )
+                    elif operation == "stop":
+                        run_id = message.get("runId")
+                        if run_id is not None and not isinstance(run_id, str):
+                            raise ValueError("runId inválido")
+                        await workflow.stop(owner, run_id)
                     else:
                         raise ValueError("Tipo de mensaje desconocido")
                     metrics.observe(str(operation), 200, (time.monotonic() - started) * 1000)
@@ -320,5 +326,6 @@ def create_designer_app(
             pass
         finally:
             clients.discard(socket)
+            await workflow.stop(owner, reason="Se ha desconectado la sesión que captura la habitación.")
 
     return app

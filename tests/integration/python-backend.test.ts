@@ -60,6 +60,36 @@ afterAll(async () => {
 })
 
 describe('TypeScript clients against Python + real ADK tools', () => {
+  test('the complete judge-agent loop crosses a score plateau and stops at the mean target', async () => {
+    const replies: DesignerReply[] = []
+    const grades: DesignerJudgement[] = []
+    const errors: string[] = []
+    let ready = false
+    const sharp = (await import('sharp')).default
+    const png = await sharp({ create: { width: 32, height: 32, channels: 3, background: 'white' } }).png().toBuffer()
+    const image = `data:image/png;base64,${png.toString('base64')}`
+    const client = new DesignerClient({
+      onState: () => { ready = true },
+      onReply: (value) => { replies.push(value); client.judge(image, value.evaluation) },
+      onJudgement: (value) => grades.push(value), onError: (error) => errors.push(error), onConnection: () => {},
+    }, `ws://127.0.0.1:${ports.designerPort}/ws`)
+    try {
+      for (let i = 0; i < 100 && !ready; i++) await delay(20)
+      expect(ready).toBe(true)
+      client.chat('añade una silla — prueba del bucle')
+      for (let i = 0; i < 300 && grades.at(-1)?.refining !== false && !errors.length; i++) await delay(20)
+      expect(errors).toEqual([])
+      expect(grades.map((grade) => grade.mean)).toEqual([5, 5, 5, 7.5])
+      expect(replies.map((reply) => reply.round)).toEqual([0, 1, 2, 3])
+      expect(new Set(replies.map((reply) => reply.runId)).size).toBe(1)
+      expect(new Set(replies.map((reply) => reply.evaluation.revision)).size).toBe(4)
+      expect(grades.at(-1)?.stopReason).toContain('objetivo alcanzado')
+      const saved = await fetch(`http://127.0.0.1:${ports.designerPort}/state`).then((r) => r.json())
+      expect(saved.verdict.mean).toBe(7.5)
+      expect(saved.conversation.some((turn: { role: string }) => turn.role === 'judge')).toBe(true)
+    } finally { client.close() }
+  })
+
   test('SearchClient consumes the Python HTTP contract and degrades on unavailable service', async () => {
     const scores = await new SearchClient(`http://127.0.0.1:${ports.searchPort}`).rank('office chair')
     expect(scores?.get('chair-1')).toBeGreaterThan(0)
@@ -88,7 +118,7 @@ describe('TypeScript clients against Python + real ADK tools', () => {
       expect(reply!.actions.some((action) => action.kind === 'placeNew')).toBe(true)
       const sharp = (await import('sharp')).default
       const png = await sharp({ create: { width: 32, height: 32, channels: 3, background: 'white' } }).png().toBuffer()
-      client.judge('silla', `data:image/png;base64,${png.toString('base64')}`)
+      client.judge(`data:image/png;base64,${png.toString('base64')}`, reply!.evaluation)
       await until(() => judgement !== undefined)
       expect(judgement!.verdict.overall).toBe(7)
       expect(judgement!.mean).toBe(7)

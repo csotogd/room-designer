@@ -1,12 +1,16 @@
 """Transactional use cases exposed as ordinary typed functions to ADK."""
 
 import asyncio
+import hashlib
+import json
 from copy import deepcopy
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from room_designer.application.critique import record_verdict
 from room_designer.application.ports import AgentRuntime, ProductPicker, ProductSearch, RoomRepository
-from room_designer.domain.room import Json, RoomEditor
+from room_designer.domain.reconciliation import merge_scene, scene_snapshot, validate_scene
+from room_designer.domain.room import Json, RoomEditor, apply_action
 
 
 class DesignTools:
@@ -78,17 +82,19 @@ class DesignTools:
         return chosen
 
     async def place_furniture(
-        self, search_query: str, x: float, z: float, rotation: float = 0, role: str = ""
+        self, search_query: str, x: float, z: float, rotation: float = 0, role: str = "", y: float = 0
     ) -> dict:
         """Search, visually select and place furniture. Coordinates are metres; rotation is degrees.
 
+        y is the height of the furniture's base above the floor (default 0), not its size.
         Placement uses real product dimensions and repairs collisions and blocked openings.
+        Repairs preserve the requested y; below-floor and above-ceiling placements are rejected.
         Read the returned action for the actual position and uid; rejected placements change nothing.
         """
 
         async def apply():
             chosen = await self._choose(search_query)
-            return self.editor.place(chosen["productId"], x, z, rotation, search_query, chosen["reason"])
+            return self.editor.place(chosen["productId"], x, z, rotation, search_query, chosen["reason"], y=y)
 
         return await self._perform(
             {
@@ -96,6 +102,7 @@ class DesignTools:
                 "searchQuery": search_query,
                 "role": role,
                 "x": x,
+                "y": y,
                 "z": z,
                 "rotDeg": rotation,
             },
@@ -103,21 +110,32 @@ class DesignTools:
         )
 
     async def replace_furniture(self, uid: str, search_query: str) -> dict:
-        """Select a replacement product for an existing uid, retaining its position when it fits."""
+        """Select a replacement for an existing uid, preserving its base height and position when it fits."""
 
         async def apply():
             old = self.editor.existing(uid)
             chosen = await self._choose(search_query)
             return self.editor.place(
-                chosen["productId"], old["x"], old["z"], old["rotDeg"], search_query, chosen["reason"], uid
+                chosen["productId"],
+                old["x"],
+                old["z"],
+                old["rotDeg"],
+                search_query,
+                chosen["reason"],
+                uid,
+                y=old["y"],
             )
 
         return await self._perform({"kind": "replace", "targetUid": uid, "searchQuery": search_query}, apply)
 
-    async def move_furniture(self, uid: str, x: float, z: float) -> dict:
-        """Move an existing furniture uid in metres. Repair must preserve its rotation."""
+    async def move_furniture(self, uid: str, x: float, z: float, y: float | None = None) -> dict:
+        """Move furniture in 3D, in metres. y is its base height above the floor; omit to keep it.
+
+        Set y=0 to put it on the floor. Repairs preserve the requested height and rotation.
+        """
         return await self._perform(
-            {"kind": "move", "targetUid": uid, "x": x, "z": z}, lambda: self.editor.move(uid, x, z)
+            {"kind": "move", "targetUid": uid, "x": x, "y": y, "z": z},
+            lambda: self.editor.move(uid, x, z, y=y),
         )
 
     async def rotate_furniture(self, uid: str, rotation: float) -> dict:
@@ -163,7 +181,53 @@ class DesignSession:
     async def state(self) -> Json:
         return await self.repository.load()
 
-    async def chat(self, brief: str, request_id: str, source: str = "user") -> Json:
+    async def edit(self, request_id: str, base_revision: str | None, base: Json, desired: Json) -> Json:
+        """Persist one human gesture or undo with three-way merge and retry deduplication."""
+        base, desired = validate_scene(base, self.catalog), validate_scene(desired, self.catalog)
+        digest = hashlib.sha256(
+            json.dumps([base_revision, base, desired], sort_keys=True, allow_nan=False).encode()
+        ).hexdigest()
+        async with self.lock:
+            state = await self.repository.load()
+            receipt = next((r for r in state.get("editReceipts", []) if r["id"] == request_id), None)
+            if receipt:
+                if receipt["digest"] != digest:
+                    raise ValueError("El identificador de edición ya se usó con otro contenido")
+                return {"type": "edit.result", "requestId": request_id, "state": state, "duplicate": True}
+            current = scene_snapshot(state)
+            merged, conflicts = merge_scene(base, desired, current)
+            if conflicts:
+                return {
+                    "type": "edit.conflict",
+                    "requestId": request_id,
+                    "state": state,
+                    "conflicts": conflicts,
+                }
+            merged = validate_scene(merged, self.catalog)
+            changed = merged != current
+            if changed:
+                apply_action(
+                    state,
+                    {"kind": "syncScene", "scene": merged},
+                    request_id,
+                    datetime.now(timezone.utc).isoformat(),
+                    source="user",
+                )
+                state["revision"] = uuid4().hex
+                state.pop("verdict", None)
+            state["editReceipts"] = (state.get("editReceipts", []) + [{"id": request_id, "digest": digest}])[
+                -100:
+            ]
+            await self.repository.save(state)
+            return {
+                "type": "edit.result",
+                "requestId": request_id,
+                "state": state,
+                "rebased": base_revision != state.get("revision") and current != base,
+                "changed": changed,
+            }
+
+    async def chat(self, brief: str, request_id: str, source: str = "user", round: int = 0) -> Json:
         async with self.lock:
             state = await self.repository.load()
             editor = RoomEditor(state, self.catalog, request_id, datetime.now(timezone.utc).isoformat())
@@ -175,8 +239,14 @@ class DesignSession:
                 reply += f" ({len(tools.rejected)} propuestas rechazadas; consulta los motivos.)"
             editor.state["conversation"] = (
                 state.get("conversation", [])
-                + [{"role": source, "text": brief}, {"role": "model", "text": reply}]
-            )[-20:]
+                + [
+                    {"role": source, "text": brief, "round": round},
+                    {"role": "model", "text": reply, "round": round},
+                ]
+            )[-40:]
+            editor.state["revision"] = uuid4().hex
+            # Previous scores remain in history, but a new turn needs a new capture.
+            editor.state.pop("verdict", None)
             await self.repository.save(editor.state)
             return {
                 "reply": reply,
@@ -185,13 +255,18 @@ class DesignSession:
                 "rejected": tools.rejected,
             }
 
-    async def record_verdict(self, verdict: Json, request_id: str, brief: str) -> Json:
+    async def record_verdict(
+        self, verdict: Json, request_id: str, brief: str, *, revision: str | None = None, **metadata
+    ) -> Json:
         """Nivel 1 del bucle juez→agente: el veredicto entra en el estado
         (nota actual de la habitación, historial y conversación) y por tanto
         en el contexto de cualquier turno posterior del agente."""
         async with self.lock:
             state = await self.repository.load()
-            entry = record_verdict(state, verdict, request_id,
-                                   datetime.now(timezone.utc).isoformat(), brief)
+            if revision is not None and state.get("revision") != revision:
+                raise ValueError("La captura pertenece a una revisión anterior de la habitación")
+            entry = record_verdict(
+                state, verdict, request_id, datetime.now(timezone.utc).isoformat(), brief, **metadata
+            )
             await self.repository.save(state)
             return {"entry": entry, "state": state}

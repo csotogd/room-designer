@@ -98,7 +98,7 @@ async def test_litellm_adapter_tool_call_roundtrip(provider, design_tools, monke
                                     "type": "function",
                                     "function": {
                                         "name": "place_furniture",
-                                        "arguments": json.dumps({"search_query": "chair", "x": 2, "z": 2}),
+                                        "arguments": json.dumps({"search_query": "chair", "x": 2, "y": 0.6, "z": 2}),
                                     },
                                 }
                             ],
@@ -124,6 +124,7 @@ async def test_litellm_adapter_tool_call_roundtrip(provider, design_tools, monke
     )
     assert result == "He colocado una silla."
     assert design_tools.editor.state["items"][0]["productId"] == "chair"
+    assert design_tools.editor.state["items"][0]["y"] == 0.6
     assert requests[0]["model"].startswith(provider + "/")
     assert requests[0]["api_key"] == "dummy"
     assert {t["function"]["name"] for t in requests[0]["tools"]} >= {
@@ -131,6 +132,9 @@ async def test_litellm_adapter_tool_call_roundtrip(provider, design_tools, monke
         "place_furniture",
         "search_catalog",
     }
+    for name in ("place_furniture", "move_furniture"):
+        function = next(t["function"] for t in requests[0]["tools"] if t["function"]["name"] == name)
+        assert "y" in function["parameters"]["properties"]
 
 
 async def test_gemini_adapter_tool_call_roundtrip(design_tools, monkeypatch):
@@ -147,7 +151,7 @@ async def test_gemini_adapter_tool_call_roundtrip(design_tools, monkeypatch):
                     types.Part(
                         function_call=types.FunctionCall(
                             name="place_furniture",
-                            args={"search_query": "chair", "x": 2, "z": 2},
+                            args={"search_query": "chair", "x": 2, "y": 0.6, "z": 2},
                             id="call-1",
                         )
                     )
@@ -166,6 +170,7 @@ async def test_gemini_adapter_tool_call_roundtrip(design_tools, monkeypatch):
     )
     assert result == "He colocado una silla."
     assert design_tools.editor.state["items"][0]["productId"] == "chair"
+    assert design_tools.editor.state["items"][0]["y"] == 0.6
     assert any(p.function_response for c in requests[-1]["contents"] for p in c.parts or [])
 
 

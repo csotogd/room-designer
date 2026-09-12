@@ -35,6 +35,19 @@ Los Dockerfiles se han migrado, pero no se han construido imágenes: el daemon
 Docker no estaba disponible en la máquina. No se ha desplegado infraestructura.
 La advertencia de Vite por tamaño del bundle sigue presente.
 
+## Continuación: juez y agente
+
+El refinamiento y su memoria están implementados con control de cancelación,
+versiones de captura, notas actuales e historial en el chat. La parada por
+estancamiento se ha eliminado: el objetivo es la media de las cuatro métricas.
+Ver el [contrato y comportamiento](../services/designer/README.md#protocolo).
+
+Verificación de esta continuación: 116 tests Python y 163 TypeScript;
+la integración por sockets ejecuta el Runner real de ADK y completa una
+secuencia de notas 5 → 5 → 5 → 7,5. Se prueban además cancelación/rollback,
+capturas antiguas, repetidas o de otra pestaña, rondas sin acciones,
+restauración del chat y fallos de carga 3D. Los modelos remotos se simulan.
+
 ## Arranque
 
 Ver [README](../README.md), [configuración de ejemplo](../.env.example) y

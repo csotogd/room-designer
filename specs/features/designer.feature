@@ -3,7 +3,7 @@ Feature: Conversational room designer
   moderna") en acciones sobre el estado de la habitación, que vive en un
   fichero con los muebles, sus coordenadas 3D y el log de cambios. placeNew
   resuelve producto real vía buscador + VLM picker; los guardrails impiden
-  muebles fuera de la sala, volando, tapando ventanas o colisionando; y un
+  muebles fuera de la sala, bajo el suelo, sobre el techo, tapando ventanas o colisionando; y un
   VLM juez puntúa un screenshot con un rubric.
 
   Scenario: An office brief becomes a furnished room with grounded products
@@ -23,10 +23,17 @@ Feature: Conversational room designer
     When the user asks to replace it with another one
     Then the item keeps its uid and position but changes product
 
-  Scenario: Nothing lands outside the room, floating, or colliding
+  Scenario: Nothing lands outside the room or colliding
     Given a room with furniture in it
     When an intent proposes an impossible position
     Then the placement is repaired to a nearby free spot or rejected with a reason
+
+  Scenario: Furniture can be placed and moved at a chosen height
+    Given a room with space above an existing desk
+    When the agent places a product at a chosen base height and moves it vertically
+    Then the chosen height is preserved when replacing, saving and replaying the room
+    And furniture may share a footprint if their vertical volumes do not overlap
+    And negative heights and positions that cross the ceiling are rejected
 
   Scenario: Furniture never blocks a window or a door swing
     Given a room with a window and a door
@@ -58,7 +65,7 @@ Feature: Conversational room designer
     When the judgement arrives
     Then the server relaunches the agent with the judge's notes until the mean reaches the target
 
-  Scenario: A refinement loop that stops improving is stopped honestly
+  Scenario: A refinement loop continues through stagnation until the target is reached
     Given consecutive verdicts without improvement
     When the next judgement arrives
-    Then the loop stops with the stagnation reason instead of iterating forever
+    Then refinement continues while the mean is below the target, including after repeated grades

@@ -53,6 +53,10 @@ def overlaps(a: tuple, b: tuple) -> bool:
     return a[0] < b[1] - EPS and a[1] > b[0] + EPS and a[2] < b[3] - EPS and a[3] > b[2] + EPS
 
 
+def vertical_overlap(bottom: float, top: float, other_bottom: float, other_top: float) -> bool:
+    return bottom < other_top - EPS and top > other_bottom + EPS
+
+
 def opening_zone(o: Json, room: Json) -> tuple:
     clearance = o["width"] if o["kind"] == "door" else 0.75
     start, end = o["offset"], o["offset"] + o["width"]
@@ -76,26 +80,34 @@ def violations(state: Json, catalog: dict[str, Json], item: Json) -> list[str]:
     except ValueError:
         return ["outside"]
     result = []
-    if abs(item["y"]) > EPS:
-        result.append("floating")
+    bottom, top = item["y"], item["y"] + product["height"]
+    if bottom < 0:
+        result.append("below-floor")
     box, room = footprint(item, product), state["room"]
     if box[0] < -EPS or box[2] < -EPS or box[1] > room["w"] + EPS or box[3] > room["d"] + EPS:
         result.append("outside")
-    if product["height"] > room["h"] + EPS:
+    if top > room["h"] + EPS:
         result.append("above-ceiling")
     for o in state["openings"]:
-        if overlaps(box, opening_zone(o, room)) and (o["kind"] == "door" or product["height"] > 0.9):
+        sill = o.get("sillHeight", 0 if o["kind"] == "door" else 0.9)
+        height = o.get("height", 2 if o["kind"] == "door" else 1.1)
+        if overlaps(box, opening_zone(o, room)) and vertical_overlap(bottom, top, sill, sill + height):
             result.append("blocks-" + o["kind"])
     for other in state["items"]:
         if other["uid"] != item["uid"] and other["productId"] in catalog:
-            if overlaps(box, footprint(other, catalog[other["productId"]])):
+            other_product = catalog[other["productId"]]
+            if (overlaps(box, footprint(other, other_product))
+                    and vertical_overlap(bottom, top, other["y"], other["y"] + other_product["height"])):
                 result.append("collision")
     return result
 
 
 def repair(state: Json, catalog: dict[str, Json], item: Json, rotate: bool = True) -> Json | None:
-    for key in ("x", "z", "rotDeg"):
+    for key in ("x", "y", "z", "rotDeg"):
         finite(item.get(key), key)
+    # Horizontal repair must never silently change an explicitly chosen height.
+    if any(v in ("unknown-product", "below-floor", "above-ceiling") for v in violations(state, catalog, item)):
+        return None
     for r in range(11):
         radius = r * 0.25
         points = max(8, int(2 * pi * radius / 0.25 + 0.5)) if r else 1
@@ -104,7 +116,6 @@ def repair(state: Json, catalog: dict[str, Json], item: Json, rotate: bool = Tru
             for rotation in [item["rotDeg"], (item["rotDeg"] + 90) % 360] if rotate else [item["rotDeg"]]:
                 candidate = dict(
                     item,
-                    y=0,
                     x=item["x"] + radius * cos(angle),
                     z=item["z"] + radius * sin(angle),
                     rotDeg=rotation,
@@ -116,12 +127,16 @@ def repair(state: Json, catalog: dict[str, Json], item: Json, rotate: bool = Tru
 
 def apply_action(state: Json, action: Json, request_id: str, at: str, source: str = "assistant") -> None:
     kind = action["kind"]
-    if kind == "setRoom":
+    if kind == "syncScene":
+        state.update(deepcopy(action["scene"]))
+    elif kind == "setRoom":
         state["room"], state["openings"] = deepcopy(action["room"]), deepcopy(action["openings"])
     elif kind == "placeNew":
         if any(i["uid"] == action["uid"] for i in state["items"]):
             raise ValueError("uid duplicado")
-        state["items"].append({k: action[k] for k in ("uid", "productId", "x", "z", "rotDeg")} | {"y": 0})
+        state["items"].append(
+            {k: action[k] for k in ("uid", "productId", "x", "z", "rotDeg")} | {"y": action.get("y", 0)}
+        )
     else:
         item = next((i for i in state["items"] if i["uid"] == action["uid"]), None)
         if item is None:
@@ -131,6 +146,8 @@ def apply_action(state: Json, action: Json, request_id: str, at: str, source: st
             state["items"].remove(item)
         elif kind in fields:
             item.update({k: action[k] for k in fields[kind]})
+            if kind in ("replace", "move") and "y" in action:
+                item["y"] = action["y"]
         else:
             raise ValueError(f"Acción desconocida: {kind}")
     state["log"].append({"at": at, "source": source, "requestId": request_id, "action": deepcopy(action)})
@@ -160,7 +177,7 @@ class RoomEditor:
             else:
                 if fixed["rotDeg"] != item["rotDeg"]:
                     self.apply({"kind": "rotate", "uid": item["uid"], "rotDeg": fixed["rotDeg"]})
-                self.apply({"kind": "move", "uid": item["uid"], "x": fixed["x"], "z": fixed["z"]})
+                self.apply({"kind": "move", "uid": item["uid"], **{k: fixed[k] for k in ("x", "y", "z")}})
         return action
 
     def existing(self, uid: str) -> Json:
@@ -178,6 +195,7 @@ class RoomEditor:
         query: str,
         reason: str,
         uid: str | None = None,
+        y: float = 0,
     ) -> Json:
         if uid:
             self.existing(uid)
@@ -185,7 +203,7 @@ class RoomEditor:
             "uid": uid or "it-" + uuid4().hex,
             "productId": product_id,
             "x": x,
-            "y": 0,
+            "y": y,
             "z": z,
             "rotDeg": rotation,
         }
@@ -197,16 +215,17 @@ class RoomEditor:
                 "kind": "replace" if uid else "placeNew",
                 "query": query,
                 "reason": reason,
-                **{k: fixed[k] for k in ("uid", "productId", "x", "z", "rotDeg")},
+                **{k: fixed[k] for k in ("uid", "productId", "x", "y", "z", "rotDeg")},
             }
         )
 
-    def move(self, uid: str, x: float, z: float) -> Json:
-        item = dict(self.existing(uid), x=x, z=z)
+    def move(self, uid: str, x: float, z: float, y: float | None = None) -> Json:
+        old = self.existing(uid)
+        item = dict(old, x=x, y=old["y"] if y is None else y, z=z)
         fixed = repair(self.state, self.catalog, item, rotate=False)
         if fixed is None:
             raise ValueError("sin hueco válido tras reparación (guardrails)")
-        return self.apply({"kind": "move", "uid": uid, "x": fixed["x"], "z": fixed["z"]})
+        return self.apply({"kind": "move", "uid": uid, **{k: fixed[k] for k in ("x", "y", "z")}})
 
     def rotate(self, uid: str, rotation: float) -> Json:
         item = dict(self.existing(uid), rotDeg=finite(rotation, "rotDeg"))

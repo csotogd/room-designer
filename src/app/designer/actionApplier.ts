@@ -129,7 +129,7 @@ function toCommand(ctx: DesignerApplyContext, action: Exclude<DesignerAction, { 
       const item = ctx.catalog.get(action.productId) // lanza si no existe
       const furniture = new Furniture(
         item,
-        new Point3D(action.x, 0, action.z),
+        new Point3D(action.x, action.y ?? 0, action.z),
         degToRad(action.rotDeg),
         undefined,
         action.uid,
@@ -143,7 +143,7 @@ function toCommand(ctx: DesignerApplyContext, action: Exclude<DesignerAction, { 
       const item = ctx.catalog.get(action.productId)
       const replacement = new Furniture(
         item,
-        new Point3D(action.x, 0, action.z),
+        new Point3D(action.x, action.y ?? 0, action.z),
         degToRad(action.rotDeg),
         undefined,
         action.uid,
@@ -151,7 +151,9 @@ function toCommand(ctx: DesignerApplyContext, action: Exclude<DesignerAction, { 
       let remove: RemoveFurnitureCommand | null = null
       return {
         execute: () => {
-          remove = new RemoveFurnitureCommand(project, findByUid(project, action.uid))
+          const previous = findByUid(project, action.uid)
+          replacement.position = new Point3D(action.x, action.y ?? previous.position.y, action.z)
+          remove = new RemoveFurnitureCommand(project, previous)
           remove.execute()
           project.addFurniture(replacement)
         },
@@ -164,16 +166,18 @@ function toCommand(ctx: DesignerApplyContext, action: Exclude<DesignerAction, { 
     case 'move': {
       let furniture: Furniture | null = null
       let fromX = 0
+      let fromY = 0
       let fromZ = 0
       return {
         execute: () => {
           furniture = findByUid(project, action.uid)
           fromX = furniture.position.x
+          fromY = furniture.position.y
           fromZ = furniture.position.z
-          project.moveFurniture(furniture, action.x, action.z)
+          project.moveFurniture(furniture, action.x, action.z, action.y)
         },
         undo: () => {
-          if (furniture) project.moveFurniture(furniture, fromX, fromZ)
+          if (furniture) project.moveFurniture(furniture, fromX, fromZ, fromY)
         },
       }
     }

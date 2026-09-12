@@ -20,7 +20,10 @@ from room_designer.domain.room import Json
 INSTRUCTION = """Eres un diseñador de interiores. Responde en el idioma del usuario.
 Usa las herramientas para ejecutar los cambios solicitados, no describas cambios sin ejecutarlos.
 Consulta los uids existentes. Crea la habitación antes de colocar muebles y añade sus aperturas.
-Trabaja en metros, x hacia el este, z hacia el sur, y=0; rotación en grados.
+Trabaja en metros: x hacia el este, z hacia el sur, y es la altura de la base del mueble sobre el suelo.
+Elige y en place_furniture y move_furniture para colocar o mover en 3D; y=0 es el suelo.
+Al omitir y en un movimiento se conserva la altura actual; reemplazar también conserva esa altura.
+La altura física del producto viene del catálogo. Respeta el techo y las colisiones 3D; rotación en grados.
 Elige muebles del catálogo real; place_furniture busca y selecciona visualmente entre candidatos.
 Las herramientas validan geometría y pueden reparar posiciones: el resultado es la fuente de verdad.
 Lee los rechazos y explica qué no pudo aplicarse. No inventes productos ni resultados.
@@ -85,7 +88,7 @@ class AdkRuntime:
         self.model = model
 
     async def run(self, brief: str, state: Json, tools: list) -> str:
-        context = {k: state.get(k, []) for k in ("room", "openings", "items", "conversation")}
+        context = {k: state.get(k, []) for k in ("room", "openings", "items", "environment", "conversation")}
         return await run_agent(
             self.model,
             INSTRUCTION,

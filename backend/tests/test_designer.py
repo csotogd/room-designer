@@ -44,7 +44,7 @@ async def test_replace(design_tools):
         assert result["action"][k] == old[k]
 
 
-@scenario("Nothing lands outside the room, floating, or colliding")
+@scenario("Nothing lands outside the room or colliding")
 async def test_repair_and_reject(design_tools, catalog):
     await design_tools.place_furniture("desk", 0.1, 0.1)
     await design_tools.place_furniture("desk", 0.1, 0.1)
@@ -73,7 +73,7 @@ async def test_persistence_replay(session):
     replay = empty_state()
     for entry in saved["log"]:
         apply_action(replay, entry["action"], entry["requestId"], entry["at"], entry["source"])
-    assert replay == {k: v for k, v in saved.items() if k != "conversation"}
+    assert replay == {k: v for k, v in saved.items() if k not in ("conversation", "revision")}
 
 
 @scenario("The websocket serves chat, state and the judge")
@@ -91,6 +91,7 @@ async def test_websocket_contract(session, tmp_path, png):
                     "requestId": "judge-1",
                     "brief": "silla",
                     "image": base64.b64encode(png).decode(),
+                    **reply["evaluation"],
                 }
             )
             verdict = socket.receive_json()
@@ -224,12 +225,84 @@ def test_invalid_screenshot(image):
         decode_png(image)
 
 
-def test_floating_and_ceiling(editor, catalog):
-    candidate = {"uid": "new", "productId": "shelf", "x": 2, "y": 2, "z": 2, "rotDeg": 0}
-    assert "floating" in violations(editor.state, catalog, candidate)
-    assert repair(editor.state, catalog, candidate)["y"] == 0
-    editor.set_room({"shape": "rect", "w": 5, "d": 4, "h": 1}, [])
-    assert "above-ceiling" in violations(editor.state, catalog, candidate)
+def test_chosen_height_floor_and_ceiling(editor, catalog):
+    candidate = {"uid": "new", "productId": "shelf", "x": 2, "y": 1.1, "z": 2, "rotDeg": 0}
+    assert not violations(editor.state, catalog, candidate)  # Top exactly touches the ceiling.
+    assert repair(editor.state, catalog, candidate)["y"] == 1.1
+    for height, violation in [(-0.1, "below-floor"), (1.2, "above-ceiling")]:
+        invalid = dict(candidate, y=height)
+        assert violation in violations(editor.state, catalog, invalid)
+        assert repair(editor.state, catalog, invalid) is None
+
+
+@scenario("Furniture can be placed and moved at a chosen height")
+async def test_3d_tools_and_replay(design_tools, catalog, tmp_path):
+    floor = (await design_tools.place_furniture("wooden desk", 2, 2))["action"]
+    raised = (await design_tools.place_furniture("wooden desk", 2, 2, y=0.75))["action"]
+    assert (raised["x"], raised["y"], raised["z"]) == (2, 0.75, 2)
+    uid = raised["uid"]
+    moved = (await design_tools.move_furniture(uid, 2, 2, y=1.2))["action"]
+    assert moved["y"] == 1.2
+    moved = (await design_tools.move_furniture(uid, 3, 2))["action"]
+    assert moved["y"] == 1.2  # Omitted height keeps the elevation.
+    replaced = (await design_tools.replace_furniture(uid, "white modern desk"))["action"]
+    assert replaced["productId"] == "desk2"
+    assert (replaced["x"], replaced["y"], replaced["z"]) == (3, 1.2, 2)
+    assert (await design_tools.rotate_furniture(uid, 90))["status"] == "success"
+    state = design_tools.editor.state
+    assert all(not violations(state, catalog, i) for i in state["items"])
+    assert state["items"][0]["uid"] == floor["uid"]
+    repository = FileRoomRepository(tmp_path / "raised.json")
+    await repository.save(state)
+    assert await repository.load() == state
+    replay = empty_state()
+    for entry in state["log"]:
+        apply_action(replay, entry["action"], entry["requestId"], entry["at"], entry["source"])
+    assert replay == state
+    assert (await design_tools.move_furniture(uid, 3, 2, y=0))["action"]["y"] == 0
+
+
+@pytest.mark.parametrize("height", [-0.1, 2, float("nan"), float("inf"), True, "1"])
+async def test_invalid_heights_do_not_persist(design_tools, height):
+    placed = (await design_tools.place_furniture("wooden desk", 2, 2, y=0.5))["action"]
+    before = copy.deepcopy(design_tools.editor.state)
+    assert (await design_tools.place_furniture("wooden desk", 3, 2, y=height))["status"] == "rejected"
+    assert (await design_tools.move_furniture(placed["uid"], 2, 2, y=height))["status"] == "rejected"
+    assert design_tools.editor.state == before
+
+
+def test_collision_depends_on_vertical_overlap_and_repair_keeps_height(editor, catalog):
+    editor.place("desk", 2, 2, 0, "desk", "test")
+    candidate = {"uid": "new", "productId": "desk", "x": 2, "y": 0.5, "z": 2, "rotDeg": 0}
+    assert "collision" in violations(editor.state, catalog, candidate)
+    assert not violations(editor.state, catalog, dict(candidate, y=0.75))
+    fixed = repair(editor.state, catalog, candidate)
+    assert fixed["y"] == 0.5
+    assert not violations(editor.state, catalog, fixed)
+
+
+@pytest.mark.parametrize("kind,sill,height", [("window", 0.9, 1.1), ("door", 0, 2)])
+def test_opening_clearance_respects_height(editor, catalog, kind, sill, height):
+    editor.set_room(editor.state["room"], [
+        {"wall": "N", "kind": kind, "offset": 1.5, "width": 1, "sillHeight": sill, "height": height}
+    ])
+    candidate = {"uid": "new", "productId": "plant", "x": 2, "y": sill, "z": 0.2, "rotDeg": 0}
+    assert "blocks-" + kind in violations(editor.state, catalog, candidate)
+    assert not violations(editor.state, catalog, dict(candidate, y=sill + height))
+    if sill:
+        assert not violations(editor.state, catalog, dict(candidate, y=0))
+
+
+def test_legacy_actions_without_y_and_elevated_resize(editor):
+    old = {"kind": "placeNew", "uid": "legacy", "productId": "desk", "x": 2, "z": 2, "rotDeg": 0}
+    editor.apply(old)
+    assert editor.existing("legacy")["y"] == 0
+    editor.move("legacy", 2, 2, y=1)
+    editor.apply({"kind": "move", "uid": "legacy", "x": 3, "z": 2})
+    editor.apply(dict(old, kind="replace", productId="desk2"))
+    assert editor.existing("legacy")["y"] == 1
+    editor.set_room({"shape": "rect", "w": 5, "d": 4, "h": 1.5}, [])
+    assert not editor.state["items"]  # Resizing never silently lowers a raised piece.
 
 
 @pytest.mark.parametrize(

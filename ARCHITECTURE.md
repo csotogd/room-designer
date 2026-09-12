@@ -28,6 +28,10 @@ Python: transporte FastAPI → casos de uso → dominio
   juez, runtime y screenshots. `application/design.py`: tools tipadas y
   transacción de un turno, sin dependencias del framework.
 - `adapters/adk_runtime.py`: factoría de modelos, instrucciones y Runner.
+  `application/critique.py` calcula y recuerda evaluaciones;
+  `application/workflow.py` coordina un ciclo cancelable por habitación.
+  Cada captura consume un ticket de ciclo y revisión; el agente recibe la
+  crítica y refina hasta la media objetivo, sin contador máximo de rondas.
   `adapters/vision.py`: selección multimodal y juez mediante ADK, validando
   sus resultados. `adapters/http.py`: exclusivamente contratos de transporte.
 - `adapters/storage.py`: catálogo publicado, HTTP de búsqueda, room file
