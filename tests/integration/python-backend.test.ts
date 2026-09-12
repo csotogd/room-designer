@@ -5,7 +5,8 @@ import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { DesignerClient, type DesignerReply } from '../../src/app/designer/DesignerClient'
 import { SearchClient } from '../../src/app/search/SearchClient'
-import type { DesignerJudgement, DesignerRoomState } from '../../src/app/designer/actions'
+import type { DesignerJudgement, DesignerRoomState, EditResult } from '../../src/app/designer/actions'
+import { sceneFromState } from '../../src/app/designer/scene'
 
 const directory = mkdtempSync(join(tmpdir(), 'python-designer-'))
 let server: ChildProcess
@@ -60,6 +61,48 @@ afterAll(async () => {
 })
 
 describe('TypeScript clients against Python + real ADK tools', () => {
+  test('manual edits persist over the socket and reach the next real ADK turn', async () => {
+    let state: DesignerRoomState | undefined
+    let ack: EditResult | undefined
+    let reply: DesignerReply | undefined
+    const errors: string[] = []
+    const client = new DesignerClient({
+      onState: (value) => { state = value }, onEdit: (value) => { ack = value },
+      onReply: (value) => { reply = value }, onJudgement: () => {},
+      onError: (error) => errors.push(error), onConnection: () => {},
+    }, `ws://127.0.0.1:${ports.designerPort}/ws`)
+    async function until(condition: () => boolean) {
+      for (let i = 0; i < 200 && !condition() && !errors.length; i++) await delay(20)
+      expect(errors).toEqual([])
+      expect(condition()).toBe(true)
+    }
+    try {
+      await until(() => !!state)
+      const base = sceneFromState(state!)
+      const room = sceneFromState({ room: { shape: 'rect', w: 5, d: 4, h: 2.6 },
+        openings: [], items: [{ uid: 'manual-chair', productId: 'chair-1', x: 1, y: 0, z: 1, rotDeg: 0 }] })
+      client.edit({ requestId: 'manual-create', baseRevision: state!.revision ?? null, base, desired: room })
+      await until(() => ack?.requestId === 'manual-create')
+      expect(ack!.type).toBe('edit.result')
+      const desired = structuredClone(room)
+      desired.items[0]!.x = 2.25
+      desired.items[0]!.y = .4
+      desired.items[0]!.rotDeg = 45
+      desired.environment.timeOfDay = 18
+      client.edit({ requestId: 'manual-drag', baseRevision: ack!.state.revision!, base: room, desired })
+      await until(() => ack?.requestId === 'manual-drag')
+      expect(ack!.type).toBe('edit.result')
+      expect(sceneFromState(ack!.state)).toEqual(desired)
+      const revision = ack!.state.revision!
+      client.chat('Describe la habitación actual', revision)
+      await until(() => !!reply)
+      expect(sceneFromState(reply!.state)).toEqual(desired)
+      expect(reply!.actions).toEqual([])
+      const saved = await fetch(`http://127.0.0.1:${ports.designerPort}/state`).then((r) => r.json())
+      expect(sceneFromState(saved)).toEqual(desired)
+    } finally { client.close() }
+  })
+
   test('the complete judge-agent loop crosses a score plateau and stops at the mean target', async () => {
     const replies: DesignerReply[] = []
     const grades: DesignerJudgement[] = []

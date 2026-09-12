@@ -59,3 +59,24 @@ Sobre la app servida con `npm run dev` (http://localhost:5173).
     paredes a mano y seleccionar/mover muebles; "Cerrar plano" vuelve al 3D.
 18. Eliminar un mueble y Ctrl+Z. **Esperado:** vuelve (con lo que tuviera
     encima). Mover una ventana y Ctrl+Z: vuelve a su offset.
+
+## QA-6 · Ediciones manuales y agentes sobre la misma habitación
+
+19. Con el diseñador conectado, arrastrar un mueble y soltarlo. Abrir el
+    asistente. **Esperado:** «Habitación guardada». `GET /state` del diseñador
+    devuelve el mismo UID con las nuevas coordenadas y una revisión nueva;
+    la nota actual queda pendiente, con las anteriores en el historial.
+20. Deshacer y enviar inmediatamente un encargo. **Esperado:** el encargo
+    espera la confirmación del guardado; el turno parte de la posición
+    restaurada. Repetir cambiando altura, luces, hora y acabados.
+21. Abrir dos pestañas. Durante una desconexión de una de ellas, mover un
+    mueble distinto en cada pestaña y reconectar. **Esperado:** se combinan
+    ambos cambios. Repetir moviendo el mismo mueble: se abre el asistente con
+    «Conservar mis cambios» y «Usar versión compartida»; no se inicia un turno
+    sobre el conflicto sin resolver.
+22. Cortar la conexión durante un guardado y recargar esa misma pestaña.
+    **Esperado:** el borrador reaparece y se reintenta la misma petición al
+    reconectar, sin duplicar muebles ni entradas de edición ya confirmadas.
+23. Crear o cargar un plano en L e intentar enviar un encargo. **Esperado:**
+    se explica el requisito de plano rectangular y se conserva el plano
+    manual; no se envía al agente una geometría diferente.

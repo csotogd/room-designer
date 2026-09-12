@@ -62,7 +62,8 @@ el mismo JSON. Los screenshots del juez se guardan antes de enviar al modelo.
 | Mensaje `/ws` | Respuesta |
 |---|---|
 | al conectar | `{type:'state', state}` |
-| `{type:'chat', requestId, text}` | `{type:'reply', requestId, runId, evaluation, reply, actions, state, rejected, round, refinement}` |
+| `{type:'chat', requestId, text, revision?}` | `{type:'reply', requestId, runId, evaluation, reply, actions, state, rejected, round, refinement}` |
+| `{type:'edit', requestId, baseRevision, base, desired}` | `{type:'edit.result', requestId, state, changed, rebased}` o `{type:'edit.conflict', requestId, state, conflicts}` |
 | `{type:'judge', requestId, runId, revision, image}` | `{type:'judge.result', requestId, runId, revision, verdict, mean, target, judgeText, feedback, refining, round, stopReason, evidence, state}` |
 | `{type:'stop', requestId, runId?}` | `{type:'loop.stopped', runId, reason}` |
 | Captura de otra revisión/ciclo, duplicada o sin turno pendiente | `{type:'judge.ignored', requestId, reason}` |
@@ -70,6 +71,31 @@ el mismo JSON. Los screenshots del juez se guardan antes de enviar al modelo.
 
 HTTP: `GET /healthz`, `GET /metrics`, `GET /state`. Otros clientes reciben
 un mensaje `state` tras los cambios. `image` debe ser PNG base64 o data URL.
+
+**Edición manual compartida:** el editor envía la escena al terminar el arrastre;
+agrupa otras ediciones durante 250 ms. `base` es la escena de partida y `desired`
+la edición local: plano, aperturas, muebles con UID/posición 3D/giro/apoyos,
+luces, hora y acabados. El servidor valida y combina cada lote con el estado
+actual bajo el mismo bloqueo que usan las tools. Dos muebles distintos pueden
+cambiar simultáneamente; modificar el mismo mueble o cambiar el plano durante
+otra edición produce un conflicto. El chat ofrece «Conservar mis cambios» y
+«Usar versión compartida» antes de volver a guardar.
+
+El borrador y la petición pendiente permanecen en `sessionStorage` de esa
+pestaña durante recargas y desconexiones. Al reconectar se reenvía el mismo
+`requestId`: los últimos 100 recibos persistidos evitan duplicar la edición
+si se perdió la confirmación. La cola admite una petición en vuelo y conserva
+las ediciones posteriores. Cerrar la pestaña elimina esta recuperación local.
+
+Antes de iniciar al agente, el chat espera todas las confirmaciones y envía
+la revisión guardada. Si otra edición cambia esa revisión antes del turno,
+el servidor devuelve el estado nuevo y pide reenviar el encargo. Una edición
+manual detiene el ciclo activo e invalida la nota actual, conservando su
+historial. Cada turno ADK carga la escena persistida, incluido el ambiente.
+
+El contrato de agentes admite actualmente **planos rectangulares**. Un plano
+manual en L o libre se conserva en el editor y bloquea el guardado compartido
+y el turno del agente con un aviso; no se convierte a un rectángulo.
 
 **Bucle juez→agente:** cada veredicto se registra en el estado (nota actual,
 historial y conversación en lenguaje natural). El agente lee esa conversación

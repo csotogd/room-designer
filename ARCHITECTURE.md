@@ -24,6 +24,10 @@ Python: transporte FastAPI → casos de uso → dominio
 
 - `backend/room_designer/domain/room.py`: geometría, aperturas, reparación,
   acciones y log reproducible. No importa ADK, HTTP, persistencia ni SDKs.
+- `domain/reconciliation.py`: valida las escenas manuales y combina base,
+  edición y estado actual por identidad de objeto. La detección de conflictos
+  es pura; `DesignSession.edit` la ejecuta dentro de la transacción de sala,
+  persiste recibos de idempotencia e invalida la evaluación actual.
 - `application/ports.py`: contratos de repositorio, búsqueda, picker,
   juez, runtime y screenshots. `application/design.py`: tools tipadas y
   transacción de un turno, sin dependencias del framework.
@@ -48,6 +52,15 @@ Las reglas `domain`/`application` y `ui → app → core` se comprueban con test
 El frontend conserva su dominio para edición interactiva, comandos y undo;
 el servidor valida sus propias acciones sin depender del estado del renderer.
 
+`app/designer/SceneSync` mantiene una cola durable por pestaña, espera al final
+del gesto y envía lotes versionados. `scene.ts` convierte el proyecto a escena
+compartida y reconcilia conservando identidades para selección y deshacer.
+El chat espera el ACK antes de enviar un encargo con su revisión; el workflow
+rechaza una revisión ya reemplazada. Los conflictos requieren una elección
+visible. Luces, acabados, hora y apoyos forman parte del mismo estado que
+recibe ADK. Los planos libres siguen pendientes de soporte en el dominio
+del agente y bloquean explícitamente la sincronización.
+
 ## Un turno de diseño
 
 1. Se serializan los turnos que comparten el room file.
@@ -57,7 +70,7 @@ el servidor valida sus propias acciones sin depender del estado del renderer.
    `replace_furniture`, `move_furniture`, `rotate_furniture`, `remove_furniture`.
 4. Colocar/reemplazar busca top-20, llama al picker visual, exige que el
    producto elegido esté entre esos candidatos y usa sus medidas reales.
-5. El dominio impide muebles fuera del plano, flotando, sobre el techo,
+5. El dominio impide muebles fuera del plano, bajo el suelo, sobre el techo,
    solapados o bloqueando aperturas. Repara cerca de la posición solicitada
    o devuelve un rechazo. Un `move` no puede cambiar la rotación.
 6. Cada cambio aceptado aparece como acción explícita y como entrada del

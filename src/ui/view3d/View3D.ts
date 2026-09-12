@@ -146,7 +146,7 @@ export class View3D {
 
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(70, 48),
-      new THREE.MeshStandardMaterial({ color: 0xefece6, roughness: 1, side: THREE.DoubleSide }),
+      new THREE.ShadowMaterial({ color: 0x4b4a48, opacity: 0.18, side: THREE.DoubleSide }),
     )
     ground.geometry.rotateX(Math.PI / 2)
     ground.position.y = -0.012

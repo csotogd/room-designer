@@ -17,7 +17,7 @@ export class ChatPanel {
   private readonly sync: SceneSync
   private readonly client: DesignerClient
   private readonly messages: HTMLElement
-  private readonly input: HTMLInputElement
+  private readonly input: HTMLTextAreaElement
   private readonly status: HTMLElement
   private readonly scores: HTMLElement | null
   private readonly stopButton: HTMLButtonElement | null
@@ -32,7 +32,7 @@ export class ChatPanel {
 
   constructor(private readonly root: Document, private readonly host: ChatPanelHost) {
     this.messages = root.querySelector<HTMLElement>('#chat-messages')!
-    this.input = root.querySelector<HTMLInputElement>('#chat-input')!
+    this.input = root.querySelector<HTMLTextAreaElement>('#chat-input')!
     this.status = root.querySelector<HTMLElement>('#chat-status')!
     this.scores = root.querySelector<HTMLElement>('#chat-scores')
     this.stopButton = root.querySelector<HTMLButtonElement>('#chat-stop')
@@ -86,6 +86,7 @@ export class ChatPanel {
       status: (message, conflict) => {
         label.textContent = message
         mine.hidden = shared.hidden = !conflict
+        if (conflict) this.setOpen(true)
       },
       saved: (state) => {
         this.revision = state.revision
@@ -97,10 +98,18 @@ export class ChatPanel {
     })
     root.addEventListener('pointerup', () => this.sync.endGesture())
     root.addEventListener('pointercancel', () => this.sync.endGesture())
-    root.querySelector<HTMLFormElement>('#chat-form')!.addEventListener('submit', async (event) => {
+    const form = root.querySelector<HTMLFormElement>('#chat-form')!
+    this.input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+      event.preventDefault()
+      form.requestSubmit()
+    })
+    form.addEventListener('submit', async (event) => {
       event.preventDefault()
       const text = this.input.value.trim()
       if (!text) return
+      this.setOpen(true)
+      this.input.focus()
       if (!this.client.connected) {
         this.addBubble('assistant', 'El servicio de diseño no está conectado.')
         return
@@ -138,7 +147,7 @@ export class ChatPanel {
       })
     }
     const compact = window.matchMedia?.('(max-width: 1099px)')
-    if (compact?.matches) this.setOpen(false)
+    this.setOpen(false)
     compact?.addEventListener('change', ({ matches }) => {
       if (matches) this.setOpen(false)
     })
@@ -146,10 +155,23 @@ export class ChatPanel {
 
   setOpen(open: boolean): void {
     const panel = this.root.querySelector<HTMLElement>('#chat')!
+    const dock = this.root.querySelector<HTMLElement>('#prompt-dock')
+    const composer = this.root.querySelector<HTMLElement>('.chat-composer')
+    const slot = this.root.querySelector<HTMLElement>('#chat-composer-slot')
+    if (dock && composer && slot) {
+      // Un único formulario conserva el borrador y sus listeners al cambiar de sitio.
+      const destination = open ? slot : dock
+      destination.append(composer)
+      dock.hidden = open
+    }
     panel.classList.toggle('collapsed', !open)
     panel.inert = !open
     const reopen = this.root.querySelector<HTMLElement>('#chat-reopen')
-    if (reopen) reopen.hidden = open
+    if (reopen) {
+      reopen.hidden = open
+      reopen.setAttribute('aria-expanded', String(open))
+    }
+    this.input.placeholder = open ? 'Sigue dando forma a tu espacio…' : '¿Qué quieres construir?'
     if (open && window.matchMedia?.('(max-width: 760px)').matches) {
       const catalog = this.root.querySelector<HTMLElement>('#catalog')
       if (catalog) {

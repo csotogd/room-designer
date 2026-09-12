@@ -113,7 +113,6 @@ export class App {
     this.onResize()
     this.refreshUndoButtons()
     this.refreshRoomMeta()
-    this.modal.show()
   }
 
   /** Instantánea del estado para QA automatizado (no usar en producción). */
@@ -281,7 +280,7 @@ export class App {
       this.el('#catalog-width').setAttribute('aria-pressed', String(wide))
     })
     const narrow = window.matchMedia('(max-width: 760px)')
-    if (narrow.matches) setCatalogOpen(false)
+    setCatalogOpen(false)
     narrow.addEventListener('change', ({ matches }) => {
       if (matches) setCatalogOpen(false)
     })
@@ -289,7 +288,7 @@ export class App {
 
   private bindKeyboard(): void {
     window.addEventListener('keydown', (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
       const meta = e.metaKey || e.ctrlKey
       if (meta && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault()

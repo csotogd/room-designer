@@ -61,8 +61,9 @@ export class SceneSync {
     if (this.blocked && !this.remoteConflict) return
     if (!this.base) {
       this.base = remote
-      this.local ??= preferLocal || !remote.room ? this.host.snapshot() : remote
       this.revision = state.revision ?? null
+      try { this.local ??= preferLocal || !remote.room ? this.host.snapshot() : remote }
+      catch (error) { this.fail(String(error)); return }
     } else if (!this.hasPending) {
       this.base = this.local = remote
       this.revision = state.revision ?? null

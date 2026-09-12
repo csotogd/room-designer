@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, test, vi, type Mock } from 'vitest'
 import type { DesignerEvents, DesignerReply } from '../../src/app/designer/DesignerClient'
-import type { DesignerJudgement, DesignerRoomState, DesignerScore } from '../../src/app/designer/actions'
+import type { DesignerJudgement, DesignerRoomState, DesignerScore, ManualEdit } from '../../src/app/designer/actions'
 import { sceneFromState } from '../../src/app/designer/scene'
 import { ChatPanel, type ChatPanelHost } from '../../src/ui/panels/ChatPanel'
 
-const mock = vi.hoisted(() => ({ events: null as DesignerEvents | null, chat: vi.fn(), judge: vi.fn(), stop: vi.fn(), edit: vi.fn() }))
+const mock = vi.hoisted(() => ({ connected: true, events: null as DesignerEvents | null, chat: vi.fn(), judge: vi.fn(), stop: vi.fn(), edit: vi.fn() }))
 vi.mock('../../src/app/designer/DesignerClient', () => ({ DesignerClient: class {
-  connected = true
+  get connected() { return mock.connected }
   constructor(events: DesignerEvents) { mock.events = events }
   chat = mock.chat
   judge = mock.judge
@@ -36,7 +36,7 @@ const text = () => document.body.textContent!
 const stopButton = () => document.querySelector<HTMLButtonElement>('#chat-stop')!
 
 async function submit() {
-  document.querySelector<HTMLInputElement>('#chat-input')!.value = 'oficina moderna'
+  document.querySelector<HTMLTextAreaElement>('#chat-input')!.value = 'oficina moderna'
   document.querySelector('#chat-form')!.dispatchEvent(new Event('submit', { cancelable: true }))
   await Promise.resolve()
 }
@@ -44,9 +44,10 @@ async function submit() {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  mock.connected = true
   sessionStorage.clear()
   mock.chat.mockReturnValue('c1')
-  document.body.innerHTML = '<aside id="chat"><span id="chat-status"></span><div id="chat-scores" hidden></div><div id="chat-messages"></div><form id="chat-form"><input id="chat-input"></form><button id="chat-stop" hidden>Detener</button></aside>'
+  document.body.innerHTML = '<div id="prompt-dock"></div><aside id="chat"><span id="chat-status"></span><div id="chat-scores" hidden></div><div id="chat-messages"></div><div id="chat-composer-slot"><div class="chat-composer"><form id="chat-form"><textarea id="chat-input"></textarea></form></div></div><button id="chat-stop" hidden>Detener</button><button id="chat-toggle">Cerrar</button></aside><button id="chat-reopen">Asistente</button>'
   host = { apply: vi.fn(() => ({ applied: 1, skipped: [] })), screenshot: vi.fn(() => image), sceneIsEmpty: () => true, snapshot: () => sceneFromState(state()), reconcile: vi.fn() }
   panel = new ChatPanel(document, host)
   events().onConnection(true)
@@ -55,6 +56,83 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('ChatPanel judge-agent handoff', () => {
+  test('opens the conversation on submit and keeps the idea if the service is offline', async () => {
+    mock.connected = false
+    await submit()
+    expect(document.querySelector<HTMLElement>('#chat')!.inert).toBe(false)
+    expect(document.querySelector<HTMLTextAreaElement>('#chat-input')!.value).toBe('oficina moderna')
+    expect(text()).toContain('El servicio de diseño no está conectado.')
+    expect(mock.chat).not.toHaveBeenCalled()
+  })
+
+  test('sends with Enter but not with an empty idea, Shift+Enter or IME composition', async () => {
+    const input = document.querySelector<HTMLTextAreaElement>('#chat-input')!
+    const enter = (options = {}) => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...options }))
+    input.value = '  '
+    enter()
+    expect(document.querySelector<HTMLElement>('#chat')!.inert).toBe(true)
+    input.value = 'Un salón tranquilo'
+    expect(enter({ shiftKey: true })).toBe(true)
+    expect(enter({ isComposing: true })).toBe(true)
+    expect(mock.chat).not.toHaveBeenCalled()
+    expect(enter()).toBe(false)
+    await Promise.resolve()
+    expect(mock.chat).toHaveBeenCalledExactlyOnceWith('Un salón tranquilo', 'v1')
+  })
+
+  test('starts in the floating composer and moves the same draft when opening or closing', () => {
+    const input = document.querySelector<HTMLTextAreaElement>('#chat-input')!
+    expect(document.querySelector<HTMLElement>('#chat')!.inert).toBe(true)
+    expect(document.querySelector('#prompt-dock')!.contains(input)).toBe(true)
+    input.value = 'Un salón tranquilo'
+    panel.setOpen(true)
+    expect(document.querySelector('#chat')!.contains(input)).toBe(true)
+    panel.setOpen(false)
+    expect(input.value).toBe('Un salón tranquilo')
+    expect(document.querySelector('#prompt-dock')!.contains(input)).toBe(true)
+  })
+
+  test('waits for the manual save before sending the prompt with its confirmed revision', async () => {
+    const local = sceneFromState(state())
+    local.environment.timeOfDay = 18
+    host.snapshot = () => local
+    panel.onSceneChanged()
+    await submit()
+    expect(mock.chat).not.toHaveBeenCalled()
+    expect(document.querySelector<HTMLTextAreaElement>('#chat-input')!.value).toBe('oficina moderna')
+    const edit = mock.edit.mock.calls[0]![0] as ManualEdit
+    events().onEdit!({ type: 'edit.result', requestId: edit.requestId,
+      state: { ...state('saved-manual'), ...edit.desired } })
+    await Promise.resolve()
+    expect(mock.chat).toHaveBeenCalledExactlyOnceWith('oficina moderna', 'saved-manual')
+    expect(document.querySelector<HTMLTextAreaElement>('#chat-input')!.value).toBe('')
+  })
+
+  test.each([true, false])('offers an explicit conflict choice and preserves the unsent prompt: keep local=%s', async (keep) => {
+    panel.setOpen(false)
+    let local = sceneFromState(state())
+    local.environment.timeOfDay = 18
+    host.snapshot = () => local
+    host.reconcile = (value) => { local = structuredClone(value) }
+    panel.onSceneChanged()
+    await submit()
+    const edit = mock.edit.mock.calls[0]![0] as ManualEdit
+    const remote = sceneFromState(state())
+    remote.environment.timeOfDay = 20
+    events().onEdit!({ type: 'edit.conflict', requestId: edit.requestId,
+      state: { ...state('other-tab'), ...remote }, conflicts: ['hora'] })
+    await Promise.resolve()
+    const choices = [...document.querySelectorAll<HTMLButtonElement>('#chat-sync button')]
+    expect(document.querySelector('#chat')!.classList.contains('collapsed')).toBe(false)
+    expect(choices.every((button) => !button.hidden)).toBe(true)
+    expect(mock.chat).not.toHaveBeenCalled()
+    expect(document.querySelector<HTMLTextAreaElement>('#chat-input')!.value).toBe('oficina moderna')
+    choices[keep ? 0 : 1]!.click()
+    expect(local.environment.timeOfDay).toBe(keep ? 18 : 20)
+    expect(choices.every((button) => button.hidden)).toBe(true)
+    expect(mock.edit).toHaveBeenCalledTimes(keep ? 2 : 1)
+  })
+
   test('shows both speakers and scores, evaluates even without actions, and finishes at target', async () => {
     await submit()
     events().onReply(reply())

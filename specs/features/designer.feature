@@ -69,3 +69,24 @@ Feature: Conversational room designer
     Given consecutive verdicts without improvement
     When the next judgement arrives
     Then refinement continues while the mean is below the target, including after repeated grades
+
+  Scenario: Manual edits become the next agent's room state
+    Given a shared room that has already been judged
+    When the user moves a piece of furniture and the server confirms the edit
+    Then the next agent reads its new position and the current grade is invalidated
+
+  Scenario: Independent manual edits merge across room revisions
+    Given two clients editing the same room revision
+    When each moves a different piece of furniture
+    Then the shared room preserves both edits
+
+  Scenario: Conflicting manual edits wait for a user choice
+    Given two clients moving the same piece of furniture differently
+    When both submit their changes
+    Then the second edit reports a conflict without overwriting the first
+    And an explicit resolution can save the chosen position
+
+  Scenario: A buffered broadcast cannot undo a later save acknowledgement
+    Given a local edit waiting for confirmation during a mouse gesture
+    When a broadcast arrives before the acknowledgement of that edit
+    Then releasing the mouse preserves the acknowledged room and its revision
