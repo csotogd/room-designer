@@ -152,3 +152,7 @@ Decisiones clave:
 - `tests/architecture` — la regla de dependencias como test.
 - `stryker.config.json` — mutation testing sobre `core` y `app`.
 - `qa/QA-PROCEDURE.md` — procedimiento de QA sobre la app real.
+
+El ciclo de trabajo que sostiene todo esto (TDD estricto: escenario →
+aceptación en rojo → unit → verde → refactor) está en [AGENTS.md](AGENTS.md),
+fuente única para agentes y personas. `CLAUDE.md` solo lo importa.
