@@ -47,7 +47,7 @@ docker push <artifact_repo>/pipeline:latest
 
 Añadir un catálogo nuevo = añadir una entrada a `catalog_sources` en un
 `terraform.tfvars` (sitio, país, cron, límite) + su `SiteConfig` en
-`pipeline/adapters/sites.ts`.
+`backend/room_designer/pipeline/sources.py`.
 
 ## Pendiente de implementación en el contenedor
 

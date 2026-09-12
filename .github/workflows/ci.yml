@@ -10,24 +10,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  calidad:
-    name: Typecheck · tests · cobertura
+  backend:
+    name: Backend Python (ruff + pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Instalar backend
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -c requirements.lock -e '.[dev]'
+      - name: Lint (ruff)
+        run: .venv/bin/ruff check backend
+      - name: Tests (unitarios + aceptación Gherkin + arquitectura + proveedores ADK)
+        run: .venv/bin/python -m pytest -q
+
+  calidad:
+    name: Front · typecheck · tests · cobertura
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # La suite de vitest incluye la integración TS↔Python (levanta el
+      # backend real con proveedores fake), así que necesita el .venv.
+      - name: Instalar backend
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -c requirements.lock -e .
       - run: npm ci
       - name: Typecheck
         run: npm run typecheck
-      - name: Tests (unitarios + aceptación Gherkin + propiedades + arquitectura)
+      - name: Tests (unitarios + aceptación Gherkin + propiedades + integración)
         run: npx vitest run --coverage
       - name: Puerta de cobertura de specs
-        # Redundante con la suite (spec-coverage.test.ts) pero explícito aquí:
-        # cada escenario Gherkin debe tener test de aceptación.
+        # Cada escenario Gherkin debe tener test de aceptación (TS o Python).
         run: npx vitest run tests/acceptance/spec-coverage.test.ts
 
   build:
@@ -53,6 +81,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # Stryker relanza vitest, que incluye la integración TS↔Python.
+      - name: Instalar backend
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -c requirements.lock -e .
       - run: npm ci
       - name: Stryker
         run: npx stryker run

@@ -1,115 +1,76 @@
-# Diseñador conversacional
+# Diseñador Python + Google ADK
 
-Microservicio de chat que convierte un brief («créame una oficina para 4,
-moderna») en **acciones sobre la habitación**: `setRoom`, `placeNew`,
-`replace`, `move`, `rotate`, `remove`. El estado vive en **un fichero** con
-los muebles, sus coordenadas 3D y el log completo de cambios; el front (panel
-de chat a la derecha) aplica las acciones a través del dominio — un turno de
-chat = una entrada de undo.
-
-## Cómo funciona un `placeNew`
-
-```
-brief ─▶ LLM (brain) ─▶ intención con searchQuery
-             │
-             ▼
-   microservicio de búsqueda (top-20 del catálogo real)
-             │  foto + precio + descripción + medidas
-             ▼
-   VLM picker: elige el candidato que mejor encaja (no siempre el 1º)
-             │
-             ▼
-   posición propuesta ─▶ GUARDRAILS ─▶ acción aplicada al fichero
-```
-
-**Guardrails duros** (el LLM propone, la geometría dispone): nada fuera de la
-habitación, nada volando (y=0), nada tapando una ventana (salvo muebles bajo
-el alféizar) ni bloqueando el barrido de una puerta, y sin colisiones. Si una
-posición no vale, se busca el hueco válido más cercano (anillos de 25 cm,
-rotación ±90°); si no hay hueco, la intención se **rechaza con motivo** —
-nunca se aplica en silencio.
-
-**VLM judge**: el front captura un screenshot de la escena tras aplicar las
-acciones y lo manda al juez, que puntúa 1–10 un rubric de **cohesión,
-colores, estilo y adherencia al brief**. La evidencia se persiste antes de
-juzgar: **en local, fichero** (`data/designer/screenshots/`); **en cloud,
-bucket GCS** (`SCREENSHOT_BUCKET`, subida por API JSON con el token del
-metadata server — sin SDK).
-
-## Arranque local
+Código: [`backend/room_designer`](../../backend/room_designer).
+Arquitectura y límites: [ARCHITECTURE.md](../../ARCHITECTURE.md).
 
 ```bash
-npm run search:serve     # el buscador (8787) es dependencia
-npm run designer:serve   # WebSocket + HTTP en 8790
-npm run dev              # la app: el panel «Diseñador» a la derecha
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -c requirements.lock -e '.[dev,clip,mesh]'
+npm run search:serve
+npm run designer:serve
+npm run dev
 ```
 
-Sin `ANTHROPIC_API_KEY`, el servicio usa **proveedores fake deterministas**
-(plantillas de oficina/dormitorio, picker léxico, juez constante): todo el
-flujo funciona offline y es lo que usan los tests. Con la key en `.env`, los
-tres papeles pasan a Claude (`claude-opus-5` por defecto).
+Ejecuta los tres últimos comandos en terminales distintas. Alternativamente,
+activa `.venv` y usa `search-serve` / `designer-serve` sin npm.
 
-## Protocolo WebSocket (`/ws`)
+## Conexiones
 
-| Mensaje | Respuesta |
-|---|---|
-| `{type:'chat', requestId, text}` | `{type:'reply', requestId, reply, actions[], state, rejected[]}` |
-| `{type:'judge', requestId, brief, image}` | `{type:'judge.result', requestId, verdict, evidence}` |
-| (al conectar) | `{type:'state', state}` — el front restaura la sala guardada |
-
-HTTP: `GET /healthz` · `GET /metrics` · `GET /state`. `DESIGNER_TOKEN`
-protege el WS (`?token=`).
-
-## El fichero de la habitación
-
-`data/designer/room-<site>.json` (escritura atómica tmp+rename):
-
-```jsonc
-{
-  "version": 1,
-  "room": { "shape": "rect", "w": 5, "d": 4, "h": 2.6 },
-  "openings": [{ "wall": "N", "kind": "window", "offset": 1.5, "width": 1.4 }],
-  "items": [{ "uid": "it-…", "productId": "polyhaven-WoodenTable_01", "x": 1, "y": 0, "z": 1.3, "rotDeg": 0 }],
-  "log": [{ "at": "…", "source": "assistant", "requestId": "…", "action": { … } }]
-}
-```
-
-Reproducir el log desde cero reconstruye el estado. Es la fase "fichero +
-websocket" del plan; la migración (Firestore/Postgres + Connect) cambia el
-adaptador de persistencia, no el dominio.
-
-## Configuración
-
-| Variable | Default | Uso |
+| Proveedor | Configuración | Conector ADK |
 |---|---|---|
-| `DESIGNER_PORT` | `8790` | puerto |
-| `DESIGNER_PROVIDER` | `auto` | `anthropic` \| `fake` \| `auto` (anthropic si hay key) |
-| `ANTHROPIC_API_KEY` | — | proveedor anthropic |
-| `DESIGNER_MODEL` | `claude-opus-5` | modelo de brain/picker/judge |
-| `DESIGNER_TOKEN` | — | token del WS |
-| `DESIGNER_ROOM_FILE` | `data/designer/room-<site>.json` | fichero de estado |
-| `DESIGNER_SCREENSHOT_DIR` | `data/designer/screenshots` | evidencia local del juez |
-| `SCREENSHOT_BUCKET` | — | bucket GCS para la evidencia (vía cloud) |
-| `SEARCH_URL` | `http://localhost:8787` | microservicio de búsqueda |
-| `CATALOG_SITE`, `LOG_LEVEL` | | como el resto del repo |
+| Gemini | `DESIGNER_PROVIDER=gemini`, `GOOGLE_API_KEY` o `GEMINI_API_KEY` | Gemini nativo, AI Studio |
+| GPT | `DESIGNER_PROVIDER=openai`, `OPENAI_API_KEY` | LiteLlm |
+| Claude | `DESIGNER_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` | LiteLlm, API directa |
+| Prueba offline | `DESIGNER_PROVIDER=fake` | Runner ADK con modelo determinista |
 
-En el front: `VITE_DESIGNER_URL` (`ws://localhost:8790/ws`).
+`DESIGNER_MODEL` cambia el modelo. Valores por defecto: `gemini-2.5-flash`,
+`gpt-4.1`, `claude-sonnet-4-6`. `auto` elige Gemini → Anthropic → OpenAI por
+clave disponible y fake si no hay ninguna. Un proveedor explícito sin clave
+produce error de configuración. `OPENAI_BASE_URL` admite endpoints
+compatibles. Las claves permanecen en el servidor.
 
-## Observabilidad
+Para mezclar modelos: `DESIGNER_PICKER_PROVIDER`, `DESIGNER_PICKER_MODEL`,
+`DESIGNER_JUDGE_PROVIDER`, `DESIGNER_JUDGE_MODEL`; cada rol acepta además
+`*_API_KEY` y `*_BASE_URL`. Un cambio de proveedor no modifica las tools.
 
-Logs JSON con `requestId` por turno (plan del cerebro, producto elegido con
-nº de candidatos, veredictos con su evidencia, rechazos con motivo),
-`/metrics` con latencias por operación. Cada screenshot juzgado queda
-guardado junto a su `requestId`: veredicto reproducible y auditable.
+## Tools y persistencia
 
-## Nube
+Las diez tools son `get_room`, `search_catalog`, `set_room`, `add_opening`,
+`clear_openings`, `place_furniture`, `replace_furniture`, `move_furniture`,
+`rotate_furniture`, `remove_furniture`. Colocar/reemplazar incluye búsqueda,
+selección visual y guardrails. Los cambios se preparan en una copia; sólo se
+persisten cuando ADK termina el turno. Los rechazos geométricos son explícitos.
 
-```bash
-docker build -f services/designer/Dockerfile -t catalog-designer .
-docker run -p 8790:8790 -v designer-data:/data \
-  -e DESIGNER_ROOM_FILE=/data/room.json -e ANTHROPIC_API_KEY=... catalog-designer
-```
+El estado permanece en `data/designer/room-<site>.json`: versión 1, habitación,
+aperturas, items, log y conversación reciente opcional. Los ficheros previos
+son compatibles. Un worker por fichero; no ejecutar varias réplicas sobre
+el mismo JSON. Los screenshots del juez se guardan antes de enviar al modelo.
 
-Cloud Run con disco/volumen para el room file (o migrar persistencia a
-Firestore), `SCREENSHOT_BUCKET` para la evidencia del juez, `SEARCH_URL`
-apuntando al servicio de búsqueda interno y las keys en Secret Manager.
+## Protocolo
+
+| Mensaje `/ws` | Respuesta |
+|---|---|
+| al conectar | `{type:'state', state}` |
+| `{type:'chat', requestId, text}` | `{type:'reply', requestId, reply, actions, state, rejected}` |
+| `{type:'judge', requestId, brief, image}` | `{type:'judge.result', requestId, verdict, evidence}` |
+| error | `{type:'error', requestId, error}` |
+
+HTTP: `GET /healthz`, `GET /metrics`, `GET /state`. Otros clientes reciben
+un mensaje `state` tras los cambios. `image` debe ser PNG base64 o data URL.
+
+| Variable | Valor por defecto |
+|---|---|
+| `DESIGNER_PORT` | 8790 (`PORT` tiene precedencia en contenedores) |
+| `DESIGNER_TURN_TIMEOUT` | 180 segundos |
+| `DESIGNER_ROOM_FILE` | `data/designer/room-<site>.json` |
+| `DESIGNER_SCREENSHOT_DIR` | `data/designer/screenshots` |
+| `SCREENSHOT_BUCKET` | sin definir: evidencia local |
+| `SEARCH_URL` | `http://localhost:8787` |
+| `DESIGNER_TOKEN` | opcional, protege WS y `/state` |
+| `DESIGNER_ALLOWED_ORIGINS` | lista separada por comas; sin token se admiten también orígenes locales |
+| `CATALOG_INDEX` | `public/catalog/index-<site>.json` |
+
+Los tests ejecutan las tools reales de ADK sin llamadas facturables. La
+integración de los tres proveedores se verifica con respuestas remotas
+simuladas. Para activar una conexión real configura la clave correspondiente
+en `.env` y reinicia el servicio.

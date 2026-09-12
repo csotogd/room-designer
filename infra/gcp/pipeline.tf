@@ -90,7 +90,7 @@ resource "google_pubsub_topic_iam_member" "ingest_publishes" {
 }
 
 # ── Job de ingesta (scraper + selección de imagen) ─────────────────────────
-# Contenedor del pipeline (pipeline/cli/ingest.ts en modo cloud): scrapea el
+# Plan pendiente de adaptadores cloud (el CLI actual es Python `catalog ingest`): scrapea el
 # sitio, elige el packshot (VLM juez de imagen si está activado; si no,
 # heurística), sube assets a GCS y publica cada producto pendiente en Pub/Sub.
 

@@ -11,11 +11,43 @@ con la mesa); las luces se regulan en vivo y el sol sigue la hora del día.
 
 ```bash
 npm install
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -c requirements.lock -e '.[dev,clip,mesh]'
 npm run dev        # abre http://localhost:5173
-npm test           # suite completa (unitarios + aceptación + propiedades + arquitectura)
+npm run test:all   # Python + frontend + integración TypeScript → Python
 npm run typecheck
 npx stryker run    # mutation testing
 ```
+
+El backend es **Python 3.12+ con Google ADK**. El editor del navegador sigue
+en TypeScript/Three.js. Diseñador, búsqueda y pipeline ya no ejecutan Node.
+También puedes instalar las dependencias con `uv sync --all-extras --frozen`.
+
+Arranca `npm run search:serve`, `npm run designer:serve` y `npm run dev` en
+tres terminales. Los scripts npm de servidor son accesos a los CLIs Python.
+Los servicios cargan `.env` sin sobrescribir variables del entorno.
+Consulta [.env.example](.env.example) y [la arquitectura actual](ARCHITECTURE.md).
+
+Para el agente, elige `DESIGNER_PROVIDER=gemini|anthropic|openai|fake` y
+configura `GOOGLE_API_KEY` (también acepta `GEMINI_API_KEY`),
+`ANTHROPIC_API_KEY` u `OPENAI_API_KEY`. `DESIGNER_MODEL` permite cambiar
+modelo. `auto` selecciona Gemini → Anthropic → OpenAI según las claves
+disponibles; sin claves usa el modo de prueba. Se puede elegir otro
+proveedor/modelo para picker y juez mediante `DESIGNER_PICKER_*` y
+`DESIGNER_JUDGE_*`. No copies `.env.example` encima de un `.env` existente.
+
+El agente ejecuta **tools reales de ADK**: consultar sala, buscar catálogo,
+crear/redimensionar habitación, añadir/borrar aperturas, colocar,
+reemplazar, mover, girar y quitar muebles. Las tools llaman a casos de uso
+que validan geometría antes de guardar. Gemini usa el conector nativo;
+GPT y Claude con API key directa usan LiteLLM, fijado en el lockfile.
+
+Para trabajar totalmente offline: `DESIGNER_PROVIDER=fake` y
+`EMBEDDINGS_PROVIDER=hashing`. El modo fake también recorre el Runner y las
+tools de ADK. CLIP/hybrid requiere el extra `[clip]` y descarga los pesos
+la primera vez; el backend Python usa PyTorch, por lo que reconstruye los
+embeddings del antiguo modelo ONNX al arrancar. Los catálogos y room files
+existentes conservan su formato.
 
 **En la app:** el asistente tiene dos pasos — forma/medidas y **puertas y
 ventanas sobre el plano** — y después colocas desde el **catálogo de
@@ -64,7 +96,7 @@ npm run search:eval                           # calidad del buscador (golden por
 Sketchfab: la búsqueda y las fotos no requieren credenciales, pero descargar
 los GLB sí — token gratuito en sketchfab.com → ajustes → API token →
 `SKETCHFAB_API_TOKEN` en `.env` y relanzar la ingesta. Las medidas de esos
-modelos se calculan del propio GLB (`pipeline/core/glb.ts`).
+modelos se calculan del propio GLB (`backend/room_designer/pipeline/geometry.py`).
 
 **Producción:** el plan de migración a front + back con gRPC (Connect-ES),
 con los contratos ya definidos, está en [ARCHITECTURE.md](ARCHITECTURE.md) y

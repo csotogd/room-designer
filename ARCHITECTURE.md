@@ -1,133 +1,140 @@
-# Arquitectura y camino a producción
+# Arquitectura actual
 
-> **Regla de doble vía (desde 2026-09-03):** toda capability del pipeline se
-> desarrolla en dos rutas a la vez — la **demo local** (CLIs + carpeta
-> `data/catalog`) y la **solución cloud escalable en GCP** (Terraform en
-> [`infra/gcp`](infra/gcp), ver su README). Misma lógica y mismos puertos;
-> cambian los adaptadores: Scheduler→ingesta, GCS como AssetStore, VLM juez
-> de imagen y de calidad, Firestore como catálogo por proveedor/país. El
-> "decode" de imagen por VLM existe como flag y nace apagado.
+El editor del navegador usa TypeScript y Three.js. Los servicios de diseño,
+búsqueda y catálogo usan Python 3.12+; Google ADK ejecuta los agentes y sus
+herramientas. HTTP/JSON y WebSocket mantienen los contratos que ya consume
+el editor. Los contratos `.proto` son una propuesta futura, no un servicio
+implementado.
 
-## Estado actual (todo en el navegador)
-
-```
-ui  ──▶  app  ──▶  core          (regla de dependencias verificada por test)
-│         │
-│         ├─ FurnitureCatalog (puerto)  ◀── DefaultCatalog (datos en memoria)
-│         ├─ ProjectRepository (puerto) ◀── LocalStorageProjectRepository
-│         └─ FloorPlanImporter (puerto) ◀── (futuro: foto → plano)
-```
-
-El dominio (`core`) es TypeScript puro y **no sabe** dónde viven los datos.
-Todo lo que en producción pasa a ser remoto ya está detrás de un puerto:
-catálogo, persistencia e importación. El documento serializado
-(`ProjectDoc`, JSON versionado) es el contrato de datos.
-
-## Producción: front + back con gRPC
-
-```
-┌────────────── navegador ──────────────┐        ┌──────────── backend ───────────┐
-│ ui (Three.js, paneles)                │        │                                │
-│ app ── GrpcCatalog ──────────┐        │ gRPC-  │  CatalogService (Go/Node)      │
-│     ── GrpcProjectRepository ┼─ connect-web ──▶│  ProjectService + Postgres     │
-│ core (dominio: sin cambios)  │        │  (HTTP)│  AssetService / CDN (GLB)      │
-└──────────────────────────────┴────────┘        └────────────────────────────────┘
+```text
+Navegador: ui → app → core
+                   │ HTTP / WebSocket
+                   ▼
+Python: transporte FastAPI → casos de uso → dominio
+               │                 ▲
+               └── composición ──┤
+                     │           └── puertos (Protocol)
+                     ├── ADK Runner + LlmAgent + function tools
+                     ├── Gemini nativo / LiteLlm (OpenAI y Anthropic)
+                     ├── búsqueda HTTP / embeddings / catálogo
+                     └── persistencia de habitación y evidencia
 ```
 
-Los contratos están en [`proto/roomdesigner/v1/roomdesigner.proto`](proto/roomdesigner/v1/roomdesigner.proto):
+## Límites del código
 
-- **CatalogService.ListItems** — artículos con medidas, precio y `asset_url`
-  (modelo GLB en CDN). El front sustituye `DefaultCatalog` por `GrpcCatalog`
-  (misma interfaz `FurnitureCatalog`); el renderer, al ver `asset_url`, carga
-  el GLB con `GLTFLoader` en lugar del modelo procedural — los procedurales
-  quedan como *fallback* y placeholder de carga.
-- **ProjectService.Save/Get/List** — persiste el `ProjectDoc` con revisión
-  para concurrencia optimista. `GrpcProjectRepository` implementa el puerto
-  `ProjectRepository` (los métodos ya son `async` por esto).
+- `backend/room_designer/domain/room.py`: geometría, aperturas, reparación,
+  acciones y log reproducible. No importa ADK, HTTP, persistencia ni SDKs.
+- `application/ports.py`: contratos de repositorio, búsqueda, picker,
+  juez, runtime y screenshots. `application/design.py`: tools tipadas y
+  transacción de un turno, sin dependencias del framework.
+- `adapters/adk_runtime.py`: factoría de modelos, instrucciones y Runner.
+  `adapters/vision.py`: selección multimodal y juez mediante ADK, validando
+  sus resultados. `adapters/http.py`: exclusivamente contratos de transporte.
+- `adapters/storage.py`: catálogo publicado, HTTP de búsqueda, room file
+  atómico y evidencia local/GCS.
+- `search/`: índice coseno vectorizado con NumPy, sincronización por hash,
+  almacenamiento compatible JSON + float32, embeddings y evaluación.
+- `pipeline/`: fuentes JSON-LD/Poly Haven/Sketchfab, assets, geometría GLB,
+  packshots, generación Tripo/TRELLIS, juez ADK y publicación. Un CLI
+  `catalog` sirve todos los trabajos; no invoca procesos Node.
+- `bootstrap.py`: único punto de composición de servicios. Carga `.env`
+  explícitamente y crea las dependencias al arrancar, no al importar.
 
-### Sobre gRPC en navegador
+Las reglas `domain`/`application` y `ui → app → core` se comprueban con tests.
+El frontend conserva su dominio para edición interactiva, comandos y undo;
+el servidor valida sus propias acciones sin depender del estado del renderer.
 
-gRPC "puro" no funciona desde un navegador (HTTP/2 frames). Dos opciones:
+## Un turno de diseño
 
-1. **Connect-ES / gRPC-Web (recomendada)**: `buf` genera clientes TypeScript
-   desde el `.proto`; el backend expone Connect (compatible gRPC y JSON) sin
-   proxy. Stack sugerido: `buf` + `@connectrpc/connect-web` en el front, y
-   `connect-go` o `@connectrpc/connect-node` en el back.
-2. Envoy como proxy gRPC-Web delante de servicios gRPC clásicos, si el
-   backend ya existe en ese formato.
+1. Se serializan los turnos que comparten el room file.
+2. Se carga estado + conversación reciente y se crea una copia de trabajo.
+3. Un `LlmAgent` de ADK recibe las tools `get_room`, `search_catalog`,
+   `set_room`, `add_opening`, `clear_openings`, `place_furniture`,
+   `replace_furniture`, `move_furniture`, `rotate_furniture`, `remove_furniture`.
+4. Colocar/reemplazar busca top-20, llama al picker visual, exige que el
+   producto elegido esté entre esos candidatos y usa sus medidas reales.
+5. El dominio impide muebles fuera del plano, flotando, sobre el techo,
+   solapados o bloqueando aperturas. Repara cerca de la posición solicitada
+   o devuelve un rechazo. Un `move` no puede cambiar la rotación.
+6. Cada cambio aceptado aparece como acción explícita y como entrada del
+   log. Redimensionar genera también las recolocaciones o retiradas necesarias.
+7. Si ADK o una dependencia falla, o vence el timeout, no se guarda el turno.
+   Si finaliza, estado, log y las últimas veinte intervenciones se escriben
+   juntos mediante temporal + fsync + replace. Después se responde y se
+   propaga el estado a las otras conexiones.
 
-### Qué NO cambia al migrar
+La conversación se almacena en el campo opcional `conversation`; `version:1`,
+las acciones y las coordenadas existentes siguen siendo compatibles. Cada
+Runner tiene una sesión efímera aislada; el estado durable lo aporta el
+repositorio. Así no existe otra copia de la habitación en una sesión ADK
+que pueda divergir al reconectar o cambiar de proveedor.
 
-- `core/` entero (geometría, plano, muebles, luces, sol, eventos).
-- Los comandos y el undo (operan sobre el dominio en memoria).
-- Las vistas 2D/3D y la lógica de edición (`app/editor`).
-- La serialización: el proto `ProjectDoc` es un espejo 1:1 del JSON actual.
+El renderer proporciona el screenshot al endpoint `judge`; el servicio
+valida PNG, guarda la evidencia y ejecuta el agente visual. No se puntúa una
+imagen que no haya quedado guardada.
 
-### Pasos de la migración
+## Proveedores
 
-1. `buf generate` sobre `proto/` → clientes TS + stubs del servidor.
-2. Backend mínimo: `ProjectService` sobre Postgres (tabla `projects`:
-   id, owner, doc JSONB, revision) y `CatalogService` sobre una tabla o YAML.
-3. `GrpcProjectRepository` y `GrpcCatalog` en `src/app/` (≈50 líneas cada uno)
-   e inyección por configuración (local vs producción).
-4. Assets: la entidad `Product` (core) ya lleva `assets.imageUrl` y
-   `assets.modelUrl`. El renderer ya resuelve ambos con fallback local:
-   `ui/view3d/models.ts` carga el GLB en diferido (caché + placeholder
-   procedural mientras llega) y `ui/view3d/thumbnails.ts` usa la foto del
-   bucket si existe o renderiza una miniatura del modelo. Migrar = subir
-   GLBs y fotos a S3/CDN y rellenar las URLs en el catálogo del backend;
-   el front no cambia.
-5. Autenticación (token en interceptor de Connect) y `ListProjects` para el
-   "mis diseños" del usuario.
+`ModelConfig` valida proveedor, modelo y credenciales al arrancar. Gemini
+usa `Gemini` con cliente de Google AI Studio explícito. OpenAI y Anthropic
+con API key directa usan `LiteLlm`; no requieren credenciales GCP. No hay
+lógica de proveedor en las tools. Brain, picker y juez pueden configurarse
+por separado. Un proveedor explícito sin clave falla; no cae silenciosamente
+a fake.
 
-## Catálogos múltiples (CATALOG_SITE)
+El modo `fake` sustituye el modelo por `OfflineModel`, que produce llamadas
+reales a las mismas tools de ADK. Es una plantilla de desarrollo, no un LLM.
+Picker y juez deterministas indican su naturaleza en sus resultados.
 
-El pipeline soporta fuentes de dos naturalezas bajo el mismo contrato
-(`CatalogScraper` → `AssetStore` → publicación): tiendas scrapeadas cuyos
-modelos se **generan** de una foto y pasan por el juez (`sklum`), y
-bibliotecas 3D con licencia abierta cuyos modelos **nativos** se descargan
-tal cual y entran pre-aprobados (`polyhaven` CC0, `sketchfab` CC0/CC-BY con
-atribución `license`/`author`). Cada sitio materializa su bucket
-(`data/catalog/<site>/`), su índice de app (`public/catalog/index-<site>.json`)
-y su instantánea de embeddings (`data/search-index/<site>/`). `CATALOG_SITE`
-selecciona el catálogo activo en pipeline, servicio de búsqueda y front a la
-vez; el resto de catálogos queda construido y listo para conmutar sin
-re-embeber. En cloud, el mismo interruptor es la variable de entorno de los
-workers/Cloud Run (colecciones `catalog_{site}_{country}` ya previstas).
+Referencias de la integración: [modelos ADK](https://adk.dev/agents/models/),
+[Claude en Python](https://adk.dev/agents/models/anthropic/),
+[LiteLLM](https://adk.dev/agents/models/litellm/).
 
-## Búsqueda semántica y orquestación del refresco
+## Búsqueda y catálogo
 
-El buscador del catálogo es un microservicio propio
-([`services/search`](services/search/README.md)): un embedding por producto
-(packshot + descripción + precio), sync diario idempotente por hash de
-contenido (altas, cambios y bajas en una sola instantánea) y evaluación de
-calidad (Recall/MRR/NDCG contra golden set + señales online en `/metrics`).
-Hoy habla HTTP/JSON; cuando el front migre a Connect, `SearchService.Search`
-debe entrar en `proto/roomdesigner/v1` como un servicio más.
+Cada catálogo mantiene sus assets, `index-<site>.json` y snapshot de búsqueda.
+El sync recibe el catálogo completo, deduplica IDs, embebe sólo los productos
+cuyo hash cambió y elimina retirados. Valida todos los vectores y persiste
+el nuevo snapshot antes de sustituir el índice en memoria. Un fallo de
+embeddings o disco conserva la instantánea anterior. Las consultas pueden
+seguir leyendo el índice previo durante el sync.
 
-**Orquestación: una sola vía canónica.** El refresco diario
-(ingesta → generación → juez → publicación → sync de embeddings → puerta de
-consistencia → evaluación) se orquesta en GCP con Cloud Scheduler + Cloud Run
-Jobs + Pub/Sub (Terraform en [`infra/gcp`](infra/gcp)); el sync y la
-verificación son pasos CLI idempotentes (`npm run search:sync [-- --verify]`)
-pensados para ser un job más de esa cadena. El DAG de Airflow en
-[`deploy/airflow`](deploy/airflow/catalog_refresh_dag.py) expresa el mismo
-grafo y sirve de referencia (o de implementación si algún día se opera
-Composer), pero **no** es una segunda vía a mantener en paralelo.
+El formato binario existente se conserva. `hashing-v3` conserva su algoritmo;
+CLIP Python usa PyTorch y una versión de embedding distinta a ONNX: la
+primera puesta en marcha reconstruye el índice a partir del catálogo
+publicado. No se mezclan vectores de distintos modelos.
 
-## Diseñador conversacional
+El pipeline guarda checkpoints tras cada producto/modelo/veredicto; conserva
+el modelo de una ingesta previa sólo si no cambió su entrada. Licencias y
+autores se propagan hasta el catálogo del navegador. `catalog link` sólo
+sincroniza la búsqueda si el sitio publicado es el activo. `catalog sync
+--verify` comprueba el número de IDs únicos; la evaluación mide Recall@k,
+MRR y NDCG con los golden sets existentes.
 
-Tercer microservicio ([`services/designer`](services/designer/README.md)):
-chat → acciones (`setRoom`/`placeNew`/`replace`/`move`/`rotate`/`remove`)
-sobre **un fichero de estado** (muebles con coordenadas 3D + log de cambios,
-escritura atómica). `placeNew` no inventa productos: el LLM elige una query,
-el buscador devuelve top-20 del catálogo real y un **VLM picker** elige por
-foto+precio+descripción; **guardrails geométricos** deterministas validan y
-reparan cada posición (nada fuera, volando, tapando aperturas ni
-colisionando). Un **VLM judge** puntúa screenshots con rubric (cohesión,
-colores, estilo, adherencia); la evidencia se persiste en fichero local o en
-GCS (`SCREENSHOT_BUCKET`) según la vía. El front habla WebSocket y aplica
-las acciones vía CommandStack (un turno = un undo). Proveedores LLM/VLM por
-puerto: Anthropic (`claude-opus-5`) o fakes deterministas para tests/demo.
-La fase actual es "fichero + WS"; la migración cloud cambia persistencia
-(Firestore) y transporte (Connect) sin tocar dominio ni guardrails.
+## Operación y pruebas
+
+- `uv.lock` resuelve todas las plataformas/extras. `requirements.lock` es
+  su exportación con versiones exactas para pip y Docker.
+- `npm run test:backend`: escenarios de negocio, límites geométricos,
+  atomicidad, concurrencia, HTTP/WS, proveedores y pipeline.
+- `npm test -- --run`: tests del editor y clientes TypeScript contra dos
+  servidores Python reales y el Runner ADK offline.
+- `npm run test:all`: ambas suites. El gate Gherkin incluye los tests Python.
+- `npm run build` y `npm run lint:backend`: tipos, bundle y lint.
+
+Las respuestas remotas de proveedores se simulan en los tests; éstos prueban
+la conversión de herramientas, respuestas e imágenes sin depender de cuotas
+ni claves. No certifican acceso real a una cuenta externa.
+
+El repositorio de habitación y el índice de fichero requieren **un proceso
+por fichero / un worker por servicio**. Son apropiados para la instalación
+local actual. Para varias réplicas se debe implementar el puerto de repositorio
+con transacciones compartidas (por ejemplo Postgres) y coordinar el índice.
+El backend conserva el modelo actual de una habitación compartida, no añade
+cuentas ni aislamiento multiusuario.
+
+Los Dockerfiles arrancan Python. Airflow usa los CLIs Python. Terraform en
+`infra/gcp` sigue siendo el plan de infraestructura: el worker Pub/Sub
+`serve-generator`, AssetStore GCS y catálogo Firestore estaban pendientes y
+siguen pendientes; no se despliega esa ruta como si estuviera implementada.
+La evidencia de screenshots sí dispone de adaptador GCS operativo.
