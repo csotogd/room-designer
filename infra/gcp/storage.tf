@@ -9,7 +9,9 @@ resource "google_storage_bucket" "assets" {
   name                        = "${var.project_id}-${local.prefix}-assets"
   location                    = var.region
   uniform_bucket_level_access = true
-  force_destroy               = var.environment != "prod"
+  force_destroy               = false
+  public_access_prevention    = "enforced"
+  versioning { enabled = true }
 
   cors {
     origin          = ["*"] # restringir al dominio del front en prod
@@ -29,20 +31,17 @@ resource "google_storage_bucket" "assets" {
   }
 }
 
-# Los GLB y fotos publicados se sirven en lectura pública (catálogo web).
-resource "google_storage_bucket_iam_member" "assets_public_read" {
-  bucket = google_storage_bucket.assets.name
-  role   = "roles/storage.objectViewer"
-  member = "allUsers"
-}
+# La publicación selectiva del catálogo se implementará con los adaptadores;
+# no se expone el bucket de trabajo completo a Internet.
 
 # ── Firestore: un catálogo por proveedor/país ──────────────────────────────
 # Colecciones: catalog_{site}_{country} — documentos con precio, descripción
 # extensa, medidas 3D (cm), enlace al GLB en GCS y veredicto del juez.
 
 resource "google_firestore_database" "catalog" {
-  name        = "(default)"
-  location_id = var.region
-  type        = "FIRESTORE_NATIVE"
-  depends_on  = [google_project_service.apis]
+  name                    = "(default)"
+  location_id             = var.region
+  type                    = "FIRESTORE_NATIVE"
+  delete_protection_state = "DELETE_PROTECTION_ENABLED"
+  deletion_policy         = "ABANDON"
 }

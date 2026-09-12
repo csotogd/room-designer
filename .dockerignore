@@ -13,3 +13,9 @@ coverage
 tests
 backend/tests
 qa
+infra
+ops
+.delivery
+gha-creds-*.json
+*.tfstate*
+*.tfplan

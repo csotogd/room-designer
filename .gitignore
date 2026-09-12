@@ -1,4 +1,10 @@
 node_modules/
+gha-creds-*.json
+.delivery/
+.bootstrap-state/
+*.tfstate
+*.tfstate.*
+*.tfplan
 dist/
 .stryker-tmp/
 reports/

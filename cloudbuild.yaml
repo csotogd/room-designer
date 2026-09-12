@@ -1,0 +1,52 @@
+# GitHub CI invoca esta configuración en el proyecto de la rama, tras sus pruebas.
+steps:
+  - id: build-frontend
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['-']
+    args:
+      - build
+      - --platform=linux/amd64
+      - -f
+      - services/frontend/Dockerfile
+      - --build-arg
+      - COMMIT_SHA=${_COMMIT_SHA}
+      - -t
+      - europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/frontend:${_COMMIT_SHA}-$BUILD_ID
+      - .
+  - id: run-frontend
+    name: gcr.io/cloud-builders/docker
+    waitFor: [build-frontend]
+    args: [run, -d, --name=frontend, --network=cloudbuild, 'europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/frontend:${_COMMIT_SHA}-$BUILD_ID']
+  - id: smoke-frontend
+    name: python:3.12-slim
+    waitFor: [run-frontend]
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        for attempt in {1..10}; do
+          python ops/delivery.py smoke http://frontend:8080 --commit '${_COMMIT_SHA}' && exit 0
+          sleep 1
+        done
+        exit 1
+  - id: build-pipeline
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['-']
+    args: [build, --platform=linux/amd64, -f, pipeline/Dockerfile, -t, 'room-designer/pipeline:${_COMMIT_SHA}', .]
+  - id: smoke-pipeline
+    name: gcr.io/cloud-builders/docker
+    waitFor: [build-pipeline]
+    args: [run, --rm, --network=none, 'room-designer/pipeline:${_COMMIT_SHA}', ingest, --help]
+  - id: stop-frontend
+    name: gcr.io/cloud-builders/docker
+    waitFor: [smoke-frontend, smoke-pipeline]
+    args: [stop, frontend]
+
+# Cloud Build publica estas imágenes únicamente al finalizar todos los pasos.
+# El catálogo aún no se publica: su runtime cloud no está implementado.
+images:
+  - europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/frontend:${_COMMIT_SHA}-$BUILD_ID
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s
+tags: ['room-designer', '${_ENVIRONMENT}']
