@@ -16,7 +16,7 @@ DEFAULT_ENVIRONMENT = {
 
 def scene_snapshot(state: Json) -> Json:
     """Canonical wire representation; metadata, prompts and scores are server-owned."""
-    return {
+    snapshot = {
         "room": deepcopy(state.get("room")),
         "openings": [
             {
@@ -39,6 +39,20 @@ def scene_snapshot(state: Json) -> Json:
         ),
         "environment": deepcopy(state.get("environment", DEFAULT_ENVIRONMENT)),
     }
+
+    snapshot["openings"].sort(key=lambda o: (o["wall"], o["offset"]))
+    snapshot["environment"]["lights"].sort(key=lambda light: light["id"])
+
+    def canonical(value):
+        if isinstance(value, float):
+            return round(value, 9)
+        if isinstance(value, list):
+            return [canonical(v) for v in value]
+        if isinstance(value, dict):
+            return {k: canonical(v) for k, v in value.items()}
+        return value
+
+    return canonical(snapshot)
 
 
 def _object(value, name):

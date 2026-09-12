@@ -33,7 +33,10 @@ class DesignTools:
 
     async def get_room(self) -> dict:
         """Read the current room and furniture identifiers, including changes made during this turn."""
-        return {k: deepcopy(self.editor.state[k]) for k in ("room", "openings", "items")}
+        return {
+            **{k: deepcopy(self.editor.state[k]) for k in ("room", "openings", "items")},
+            "environment": deepcopy(self.editor.state.get("environment", {})),
+        }
 
     async def search_catalog(self, query: str, limit: int = 20) -> dict:
         """Search real catalog products by description. Returns dimensions, images, prices and identifiers."""

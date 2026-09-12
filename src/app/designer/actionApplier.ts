@@ -103,7 +103,8 @@ function buildPlan(
           ? room.d - opening.offset - opening.width
           : opening.offset
     const piece =
-      opening.kind === 'door' ? new Door(along, opening.width) : new Window(along, opening.width)
+      opening.kind === 'door' ? new Door(along, opening.width, opening.height)
+        : new Window(along, opening.width, opening.height, opening.sillHeight)
     if (wall.canPlaceOpening(piece, along)) {
       wall.addOpening(piece)
     } else {

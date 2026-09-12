@@ -23,11 +23,16 @@ export function sceneFromState(state: Pick<DesignerRoomState, 'room' | 'items' |
     room: state.room ? { shape: 'rect', w: n(state.room.w), d: n(state.room.d), h: n(state.room.h) } : null,
     openings: state.openings.map((o) => ({ wall: o.wall, kind: o.kind, offset: n(o.offset), width: n(o.width),
       height: n(o.height ?? (o.kind === 'door' ? 2 : 1.1)), sillHeight: n(o.sillHeight ?? (o.kind === 'door' ? 0 : .9)) }))
-      .sort((a, b) => a.wall.localeCompare(b.wall) || a.offset - b.offset),
+      .sort((a, b) => (a.wall < b.wall ? -1 : a.wall > b.wall ? 1 : 0) || a.offset - b.offset),
     items: state.items.map((i) => ({ uid: i.uid, productId: i.productId, x: n(i.x), y: n(i.y), z: n(i.z),
-      rotDeg: n(((i.rotDeg % 360) + 360) % 360), supportedBy: i.supportedBy ?? null })).sort((a, b) => a.uid.localeCompare(b.uid)),
-    environment: copy(state.environment ?? { timeOfDay: 12, lights: [],
-      finishes: { wall: DEFAULT_WALL_FINISH, floor: DEFAULT_FLOOR_FINISH } }),
+      rotDeg: n(((i.rotDeg % 360) + 360) % 360), supportedBy: i.supportedBy ?? null })).sort((a, b) => (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0)),
+    environment: {
+      timeOfDay: n(state.environment?.timeOfDay ?? 12),
+      lights: (state.environment?.lights ?? []).map((l) => ({ id: l.id, kind: l.kind,
+        position: { x: n(l.position.x), y: n(l.position.y), z: n(l.position.z) }, on: l.on,
+        intensity: n(l.intensity), temperatureK: n(l.temperatureK) })).sort((a, b) => a.id < b.id ? -1 : 1),
+      finishes: copy(state.environment?.finishes ?? { wall: DEFAULT_WALL_FINISH, floor: DEFAULT_FLOOR_FINISH }),
+    },
   }
 }
 

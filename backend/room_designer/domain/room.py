@@ -96,8 +96,9 @@ def violations(state: Json, catalog: dict[str, Json], item: Json) -> list[str]:
     for other in state["items"]:
         if other["uid"] != item["uid"] and other["productId"] in catalog:
             other_product = catalog[other["productId"]]
-            if (overlaps(box, footprint(other, other_product))
-                    and vertical_overlap(bottom, top, other["y"], other["y"] + other_product["height"])):
+            if overlaps(box, footprint(other, other_product)) and vertical_overlap(
+                bottom, top, other["y"], other["y"] + other_product["height"]
+            ):
                 result.append("collision")
     return result
 
@@ -106,7 +107,9 @@ def repair(state: Json, catalog: dict[str, Json], item: Json, rotate: bool = Tru
     for key in ("x", "y", "z", "rotDeg"):
         finite(item.get(key), key)
     # Horizontal repair must never silently change an explicitly chosen height.
-    if any(v in ("unknown-product", "below-floor", "above-ceiling") for v in violations(state, catalog, item)):
+    if any(
+        v in ("unknown-product", "below-floor", "above-ceiling") for v in violations(state, catalog, item)
+    ):
         return None
     for r in range(11):
         radius = r * 0.25
@@ -125,6 +128,16 @@ def repair(state: Json, catalog: dict[str, Json], item: Json, rotate: bool = Tru
     return None
 
 
+def dependents(state: Json, uid: str) -> list[Json]:
+    found, ids = [], {uid}
+    while True:
+        added = [i for i in state["items"] if i["uid"] not in ids and i.get("supportedBy") in ids]
+        if not added:
+            return found
+        found.extend(added)
+        ids.update(i["uid"] for i in added)
+
+
 def apply_action(state: Json, action: Json, request_id: str, at: str, source: str = "assistant") -> None:
     kind = action["kind"]
     if kind == "syncScene":
@@ -141,6 +154,18 @@ def apply_action(state: Json, action: Json, request_id: str, at: str, source: st
         item = next((i for i in state["items"] if i["uid"] == action["uid"]), None)
         if item is None:
             raise ValueError(f"uid desconocido: {action['uid']}")
+        if kind == "move":
+            for child in dependents(state, item["uid"]):
+                for key in ("x", "y", "z"):
+                    child[key] += action.get(key, item[key]) - item[key]
+        if kind in ("remove", "replace"):
+            for child in [i for i in state["items"] if i.get("supportedBy") == item["uid"]]:
+                dy = child["y"]
+                for lowered in [child, *dependents(state, child["uid"])]:
+                    lowered["y"] -= dy
+                child.pop("supportedBy", None)
+            if kind == "replace":
+                item.pop("supportedBy", None)
         fields = {"replace": ("productId", "x", "z", "rotDeg"), "move": ("x", "z"), "rotate": ("rotDeg",)}
         if kind == "remove":
             state["items"].remove(item)

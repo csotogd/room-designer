@@ -24,6 +24,7 @@ export class SceneSync {
   private bufferedResult: EditResult | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private deadline: ReturnType<typeof setTimeout> | undefined
+  private awaiting = false
   private waiters: { resolve: () => void; reject: (error: Error) => void }[] = []
 
   constructor(private readonly host: SceneSyncHost, private readonly storage?: Storage,
@@ -45,6 +46,7 @@ export class SceneSync {
     this.connected = connected
     this.ready = false
     if (!connected) {
+      this.awaiting = false
       clearTimeout(this.deadline)
       this.rejectWaiters('Sin conexión. Tus ediciones siguen pendientes en esta pestaña.')
       if (this.hasPending) this.host.status('Cambios pendientes · sin conexión', false)
@@ -56,6 +58,7 @@ export class SceneSync {
     const remote = sceneFromState(state)
     const first = !this.ready
     this.ready = true
+    if (this.blocked && !this.remoteConflict) return
     if (!this.base) {
       this.base = remote
       this.local ??= preferLocal || !remote.room ? this.host.snapshot() : remote
@@ -108,12 +111,23 @@ export class SceneSync {
     if (this.gesture) return Promise.reject(new Error('Termina el arrastre antes de enviar el encargo.'))
     clearTimeout(this.timer)
     if (!this.hasPending) return Promise.resolve()
-    return new Promise<void>((resolve, reject) => { this.waiters.push({ resolve, reject }); this.pump() })
+    return new Promise<void>((resolve, reject) => {
+      this.waiters.push({ resolve, reject })
+      if (this.pending && !this.awaiting) this.transmit()
+      else this.pump()
+    })
   }
 
   result(result: EditResult): void {
     if (result.requestId !== this.pending?.requestId) return
-    if (this.gesture) { this.bufferedResult = result; clearTimeout(this.deadline); return }
+    if (this.gesture) {
+      this.bufferedResult = result
+      // El ACK ya incorpora los estados anteriores en este WebSocket ordenado.
+      this.bufferedState = null
+      clearTimeout(this.deadline)
+      return
+    }
+    this.awaiting = false
     clearTimeout(this.deadline)
     const sent = this.pending
     if (result.type === 'edit.conflict') {
@@ -182,9 +196,11 @@ export class SceneSync {
   private transmit(): void {
     if (!this.pending) return
     this.host.status('Guardando habitación…', false)
+    this.awaiting = true
     this.host.send(this.pending)
     clearTimeout(this.deadline)
     this.deadline = setTimeout(() => {
+      this.awaiting = false
       this.host.status('Sin confirmación del servidor. El borrador se conserva; reconecta para reintentar.', false)
       this.rejectWaiters('No se ha confirmado el guardado. No iniciaré al agente sobre un estado anterior.')
     }, 15000)
