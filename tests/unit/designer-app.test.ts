@@ -6,6 +6,7 @@ import { stateToActions, type DesignerAction } from '../../src/app/designer/acti
 import { DefaultCatalog } from '../../src/app/catalog/DefaultCatalog'
 import { FloorPlan } from '../../src/core/model/FloorPlan'
 import { Project } from '../../src/core/model/Project'
+import { reconcileProject, snapshotProject } from '../../src/app/designer/scene'
 
 function appContext() {
   const catalog = new DefaultCatalog()
@@ -95,14 +96,57 @@ describe('applyDesignerActions', () => {
   })
 
   test('stateToActions reconstruye una sala completa', () => {
+    const { ctx, project, catalog } = appContext()
     const actions = stateToActions({
       version: 1,
       room: { shape: 'rect', w: 4, d: 3, h: 2.5 },
       openings: [],
-      items: [{ uid: 'u1', productId: 'p', x: 1, y: 0, z: 1, rotDeg: 0 }],
+      items: [{ uid: 'u1', productId: catalog.items()[0]!.id, x: 1, y: 1.2, z: 1, rotDeg: 0 }],
     })
     expect(actions[0]!.kind).toBe('setRoom')
     expect(actions[1]!.kind).toBe('placeNew')
+    expect(applyDesignerActions(ctx, actions).skipped).toEqual([])
+    expect(project().furniture[0]!.position.y).toBe(1.2)
+  })
+
+  test('altura 3D se conserva al mover, reemplazar, deshacer y rehacer', () => {
+    const { ctx, stack, project, catalog } = appContext()
+    const [a, b] = catalog.items()
+    applyDesignerActions(ctx, [
+      { kind: 'placeNew', uid: 'u1', productId: a!.id, x: 1, y: 0.75, z: 1, rotDeg: 0, query: '' },
+    ])
+    applyDesignerActions(ctx, [
+      { kind: 'move', uid: 'u1', x: 2, y: 1.2, z: 2 },
+      { kind: 'replace', uid: 'u1', productId: b!.id, x: 2, z: 2, rotDeg: 0, query: '' },
+      { kind: 'move', uid: 'u1', x: 3, z: 2 },
+      { kind: 'rotate', uid: 'u1', rotDeg: 90 },
+    ])
+    expect(project().furniture[0]!.position).toMatchObject({ x: 3, y: 1.2, z: 2 })
+    stack.undo()
+    expect(project().furniture[0]!.position).toMatchObject({ x: 1, y: 0.75, z: 1 })
+    expect(project().furniture[0]!.item.id).toBe(a!.id)
+    stack.redo()
+    expect(project().furniture[0]!.position).toMatchObject({ x: 3, y: 1.2, z: 2 })
+    expect(project().furniture[0]!.item.id).toBe(b!.id)
+    applyDesignerActions(ctx, [{ kind: 'move', uid: 'u1', x: 3, y: 0, z: 2 }])
+    expect(project().furniture[0]!.position.y).toBe(0)
+    stack.undo()
+    expect(project().furniture[0]!.position.y).toBe(1.2)
+  })
+
+  test('replace aplica la altura explícita y la sincronización la restaura', () => {
+    const { ctx, project, catalog } = appContext()
+    const [a, b] = catalog.items()
+    applyDesignerActions(ctx, [
+      { kind: 'placeNew', uid: 'u1', productId: a!.id, x: 1, y: 0.75, z: 1, rotDeg: 0, query: '' },
+      { kind: 'replace', uid: 'u1', productId: b!.id, x: 1, y: 1.2, z: 1, rotDeg: 0, query: '' },
+    ])
+    const scene = snapshotProject(project())
+    expect(scene.items[0]!.y).toBe(1.2)
+    const restored = new Project(FloorPlan.rectangle(5, 4, 2.6))
+    reconcileProject(restored, scene, catalog)
+    expect(restored.furniture[0]!.position.y).toBe(1.2)
+    expect(snapshotProject(restored)).toEqual(scene)
   })
 })
 
