@@ -19,6 +19,7 @@ export class CartPanel {
     this.root.querySelector('#cart-button')!.addEventListener('click', () => {
       const panel = this.panel()
       panel.hidden = !panel.hidden
+      this.root.querySelector('#cart-button')!.setAttribute('aria-expanded', String(!panel.hidden))
       if (!panel.hidden) this.renderPanel()
     })
     this.refresh()

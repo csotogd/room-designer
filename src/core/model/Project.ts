@@ -172,9 +172,9 @@ export class Project {
     this.emitChanged('furniture-moved')
   }
 
-  /** Mueve un mueble en planta; lo que tiene encima viaja con él. */
-  moveFurniture(furniture: Furniture, x: number, z: number): void {
-    this.translateWithDependents(furniture, x - furniture.position.x, 0, z - furniture.position.z)
+  /** Mueve en 3D; sin y conserva la altura. Lo que tiene encima viaja con él. */
+  moveFurniture(furniture: Furniture, x: number, z: number, y = furniture.position.y): void {
+    this.translateWithDependents(furniture, x - furniture.position.x, y - furniture.position.y, z - furniture.position.z)
     this.emitChanged('furniture-moved')
   }
 

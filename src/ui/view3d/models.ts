@@ -5,6 +5,7 @@ import type { CatalogItem } from '../../core/model/CatalogItem'
 type CacheEntry = THREE.Group | 'loading' | 'failed'
 
 const cache = new Map<string, CacheEntry>()
+const pendingLoads = new Map<string, Promise<void>>()
 const loader = new GLTFLoader()
 
 /**
@@ -21,16 +22,35 @@ export function modelFor(product: CatalogItem, onLoaded: () => void): THREE.Grou
   if (entry === 'loading' || entry === 'failed') return null
 
   cache.set(product.id, 'loading')
+  let settled!: () => void
+  pendingLoads.set(product.id, new Promise<void>((resolve) => { settled = resolve }))
   loader.load(
     url,
     (gltf) => {
       cache.set(product.id, normalizeToDimensions(gltf.scene, product))
       onLoaded()
+      settled()
     },
     undefined,
-    () => cache.set(product.id, 'failed'),
+    () => { cache.set(product.id, 'failed'); settled() },
   )
   return null
+}
+
+/** A visual judgement must see the loaded products, not temporary placeholders. */
+export async function waitForModels(products: readonly CatalogItem[], timeout = 30000): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      Promise.all(products.map((product) => pendingLoads.get(product.id))),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Los modelos 3D no terminaron de cargar.')), timeout)
+      }),
+    ])
+    if (products.some((product) => product.assets.modelUrl && !(cache.get(product.id) instanceof THREE.Group))) {
+      throw new Error('No se pudieron cargar todos los modelos 3D de la habitación.')
+    }
+  } finally { clearTimeout(timer) }
 }
 
 /**

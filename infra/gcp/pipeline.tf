@@ -60,13 +60,14 @@ resource "google_pubsub_topic" "products_dead_letter" {
 }
 
 resource "google_pubsub_subscription" "generator_push" {
+  count = var.enable_catalog_runtime ? 1 : 0
   name  = "${local.prefix}-generator-push"
   topic = google_pubsub_topic.products_to_generate.id
 
   ack_deadline_seconds = 600 # una generación tarda 1-2 min; margen amplio
 
   push_config {
-    push_endpoint = "${google_cloud_run_v2_service.generator.uri}/generate"
+    push_endpoint = "${google_cloud_run_v2_service.generator[0].uri}/generate"
     oidc_token {
       service_account_email = google_service_account.scheduler.email
     }
@@ -90,11 +91,12 @@ resource "google_pubsub_topic_iam_member" "ingest_publishes" {
 }
 
 # ── Job de ingesta (scraper + selección de imagen) ─────────────────────────
-# Contenedor del pipeline (pipeline/cli/ingest.ts en modo cloud): scrapea el
+# Plan pendiente de adaptadores cloud (el CLI actual es Python `catalog ingest`): scrapea el
 # sitio, elige el packshot (VLM juez de imagen si está activado; si no,
 # heurística), sube assets a GCS y publica cada producto pendiente en Pub/Sub.
 
 resource "google_cloud_run_v2_job" "ingest" {
+  count    = var.enable_catalog_runtime ? 1 : 0
   name     = "${local.prefix}-ingest"
   location = var.region
 
@@ -105,7 +107,7 @@ resource "google_cloud_run_v2_job" "ingest" {
       timeout         = "1800s"
 
       containers {
-        image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.pipeline.repository_id}/pipeline:${var.pipeline_image_tag}"
+        image = var.pipeline_image
         args  = ["ingest"] # el site/country/limit llegan por overrides del scheduler
 
         env {
@@ -160,6 +162,7 @@ resource "google_cloud_run_v2_job" "ingest" {
 # colección catalog_{site}_{country} de Firestore.
 
 resource "google_cloud_run_v2_service" "generator" {
+  count    = var.enable_catalog_runtime ? 1 : 0
   name     = "${local.prefix}-generator"
   location = var.region
   ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
@@ -171,11 +174,11 @@ resource "google_cloud_run_v2_service" "generator" {
 
     scaling {
       min_instance_count = 0
-      max_instance_count = 8 # paraleliza catálogos grandes; sube según cuota del proveedor
+      max_instance_count = 1
     }
 
     containers {
-      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.pipeline.repository_id}/pipeline:${var.pipeline_image_tag}"
+      image = var.pipeline_image
       args  = ["serve-generator"]
 
       env {
@@ -223,7 +226,8 @@ resource "google_cloud_run_v2_service" "generator" {
 }
 
 resource "google_cloud_run_v2_service_iam_member" "pubsub_invokes_generator" {
-  name     = google_cloud_run_v2_service.generator.name
+  count    = var.enable_catalog_runtime ? 1 : 0
+  name     = google_cloud_run_v2_service.generator[0].name
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler.email}"
@@ -258,7 +262,7 @@ resource "google_project_iam_member" "generator_firestore" {
 # ── Disparo programado: una ingesta por fuente (sitio × país) ──────────────
 
 resource "google_cloud_scheduler_job" "ingest" {
-  for_each = { for s in var.catalog_sources : "${s.site}-${s.country}" => s }
+  for_each = { for s in var.catalog_sources : "${s.site}-${s.country}" => s if var.enable_catalog_runtime }
 
   name      = "${local.prefix}-ingest-${each.key}"
   region    = var.region
@@ -267,7 +271,7 @@ resource "google_cloud_scheduler_job" "ingest" {
 
   http_target {
     http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.ingest.name}:run"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.ingest[0].name}:run"
 
     oauth_token {
       service_account_email = google_service_account.scheduler.email
@@ -290,8 +294,10 @@ resource "google_cloud_scheduler_job" "ingest" {
   }
 }
 
-resource "google_project_iam_member" "scheduler_runs_jobs" {
-  project = var.project_id
-  role    = "roles/run.developer"
-  member  = "serviceAccount:${google_service_account.scheduler.email}"
+resource "google_cloud_run_v2_job_iam_member" "scheduler_runs_jobs" {
+  count    = var.enable_catalog_runtime ? 1 : 0
+  name     = google_cloud_run_v2_job.ingest[0].name
+  location = var.region
+  role     = "roles/run.jobsExecutorWithOverrides"
+  member   = "serviceAccount:${google_service_account.scheduler.email}"
 }

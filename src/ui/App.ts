@@ -24,6 +24,7 @@ import { View2D } from './view2d/View2D'
 import { WallTool } from './view2d/tools/WallTool'
 import { SelectTool } from './view2d/tools/SelectTool'
 import { applyDesignerActions } from '../app/designer/actionApplier'
+import { snapshotProject, reconcileProject } from '../app/designer/scene'
 import { CatalogPanel } from './panels/CatalogPanel'
 import { CartPanel } from './panels/CartPanel'
 import { ChatPanel } from './panels/ChatPanel'
@@ -95,6 +96,8 @@ export class App {
       },
       screenshot: () => this.view3d.captureScreenshot(),
       sceneIsEmpty: () => this.project.furniture.length === 0,
+      snapshot: () => snapshotProject(this.project),
+      reconcile: (scene) => reconcileProject(this.project, scene, this.catalog),
     })
     this.modal = new CreateRoomModal(root, (plan) => {
       this.setProject(new Project(plan, plan.walls[0]?.height ?? 2.5))
@@ -104,10 +107,12 @@ export class App {
     this.bindTopbar()
     this.bindKeyboard()
     this.bindPlanOverlay()
+    this.el<HTMLButtonElement>('#frame-room').addEventListener('click', () => this.view3d.frameRoom())
     window.addEventListener('resize', () => this.onResize())
+    new ResizeObserver(() => this.onResize()).observe(this.el('#container3d'))
     this.onResize()
     this.refreshUndoButtons()
-    this.modal.show()
+    this.refreshRoomMeta()
   }
 
   /** Instantánea del estado para QA automatizado (no usar en producción). */
@@ -148,7 +153,7 @@ export class App {
         currency: 'EUR',
         maximumFractionDigits: 0,
       })
-      price.style.color = '#8a8072'
+      price.style.color = 'var(--ink-soft)'
       panel.append(name, price)
       panel.append(
         this.pill('⟳ 45° (R) · rueda para girar fino', () => this.rotateSelection(furniture)),
@@ -162,7 +167,7 @@ export class App {
       panel.append(this.objName(opening.kind === 'door' ? 'Puerta' : 'Ventana'))
       const tip = this.root.createElement('span')
       tip.textContent = 'Arrástrala por la pared'
-      tip.style.color = '#8a8072'
+      tip.style.color = 'var(--ink-soft)'
       tip.style.fontSize = '12px'
       panel.append(
         tip,
@@ -254,22 +259,36 @@ export class App {
     // Panel de catálogo: minimizar a un asa lateral y alternar ancho.
     const catalog = this.el<HTMLElement>('#catalog')
     const reopen = this.el<HTMLButtonElement>('#catalog-reopen')
+    const setCatalogOpen = (open: boolean): void => {
+      catalog.classList.toggle('collapsed', !open)
+      catalog.inert = !open
+      reopen.hidden = open
+      if (open && window.matchMedia('(max-width: 760px)').matches) {
+        this.chatPanel.setOpen(false)
+      }
+    }
     this.el<HTMLButtonElement>('#catalog-collapse').addEventListener('click', () => {
-      catalog.classList.add('collapsed')
-      reopen.hidden = false
+      setCatalogOpen(false)
+      reopen.focus()
     })
     reopen.addEventListener('click', () => {
-      catalog.classList.remove('collapsed')
-      reopen.hidden = true
+      setCatalogOpen(true)
+      this.el<HTMLButtonElement>('#catalog-collapse').focus()
     })
     this.el<HTMLButtonElement>('#catalog-width').addEventListener('click', () => {
-      catalog.classList.toggle('wide')
+      const wide = catalog.classList.toggle('wide')
+      this.el('#catalog-width').setAttribute('aria-pressed', String(wide))
+    })
+    const narrow = window.matchMedia('(max-width: 760px)')
+    setCatalogOpen(false)
+    narrow.addEventListener('change', ({ matches }) => {
+      if (matches) setCatalogOpen(false)
     })
   }
 
   private bindKeyboard(): void {
     window.addEventListener('keydown', (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
       const meta = e.metaKey || e.ctrlKey
       if (meta && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault()
@@ -328,16 +347,21 @@ export class App {
 
   private bindPlanOverlay(): void {
     const overlay = this.el('#plan-overlay')
-    this.el<HTMLButtonElement>('#plan-toggle').addEventListener('click', () => {
-      overlay.hidden = !overlay.hidden
-      if (!overlay.hidden) {
+    const setPlanOpen = (open: boolean): void => {
+      overlay.hidden = !open
+      for (const [id, active] of [['#view-3d', !open], ['#plan-toggle', open]] as const) {
+        this.el(id).classList.toggle('active', active)
+        this.el(id).setAttribute('aria-pressed', String(active))
+      }
+      this.el<HTMLButtonElement>('#frame-room').disabled = open
+      if (open) {
         this.ensureView2D()
         this.view2d!.resize()
       }
-    })
-    this.el<HTMLButtonElement>('#plan-close').addEventListener('click', () => {
-      overlay.hidden = true
-    })
+    }
+    this.el<HTMLButtonElement>('#plan-toggle').addEventListener('click', () => setPlanOpen(overlay.hidden))
+    this.el<HTMLButtonElement>('#view-3d').addEventListener('click', () => setPlanOpen(false))
+    this.el<HTMLButtonElement>('#plan-close').addEventListener('click', () => setPlanOpen(false))
     for (const button of this.root.querySelectorAll<HTMLButtonElement>('[data-plantool]')) {
       button.addEventListener('click', () => {
         this.ensureView2D()
@@ -413,6 +437,8 @@ export class App {
     this.el<HTMLInputElement>('#time-slider').value = String(project.timeOfDay)
     this.refreshTimeLabel()
     this.refreshUndoButtons()
+    this.refreshRoomMeta()
+    this.chatPanel?.onSceneChanged()
   }
 
   // ── Utilidades ───────────────────────────────────────────────────────────
@@ -421,6 +447,8 @@ export class App {
     return this.project.events.on('changed', () => {
       this.refreshUndoButtons()
       this.cartPanel?.refresh()
+      this.refreshRoomMeta()
+      this.chatPanel?.onSceneChanged()
     })
   }
 
@@ -429,6 +457,12 @@ export class App {
     const hh = String(Math.floor(hours)).padStart(2, '0')
     const mm = String(Math.round((hours % 1) * 60)).padStart(2, '0')
     this.el('#time-value').textContent = `${hh}:${mm}`
+    this.el('#time-slider').setAttribute('aria-valuetext', `${hh}:${mm}`)
+  }
+
+  private refreshRoomMeta(): void {
+    const area = this.project.floorPlan.floorPolygon()?.area()
+    this.el('#room-meta').textContent = area == null ? '' : `${area.toLocaleString('es-ES', { maximumFractionDigits: 1 })} m²`
   }
 
   private refreshUndoButtons(): void {

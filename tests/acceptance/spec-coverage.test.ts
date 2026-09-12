@@ -25,6 +25,11 @@ function scenariosInTests(): Set<string> {
       names.add(m[2]!)
     }
   }
+  const pythonTests = join(HERE, '../../backend/tests')
+  for (const file of readdirSync(pythonTests).filter((f) => f.startsWith('test_') && f.endsWith('.py'))) {
+    const text = readFileSync(join(pythonTests, file), 'utf8')
+    for (const m of text.matchAll(/@scenario\(\s*(['"])((?:\\.|(?!\1).)*)\1/g)) names.add(m[2]!)
+  }
   return names
 }
 

@@ -79,6 +79,7 @@ export class CatalogPanel {
     this.activeTab = tab
     for (const b of this.root.querySelectorAll<HTMLButtonElement>('#catalog-tabs button')) {
       b.classList.toggle('active', b.dataset.tab === tab)
+      b.setAttribute('aria-pressed', String(b.dataset.tab === tab))
     }
     this.renderCards()
   }
@@ -123,6 +124,19 @@ export class CatalogPanel {
     if (this.activeTab === 'furniture') this.renderProductCards(container)
     else if (this.activeTab === 'finishes') this.renderFinishes(container)
     else this.renderSimpleCards(container)
+    const titles: Record<string, string> = {
+      furniture: this.query ? 'Ordenados por relevancia' : 'Todos los muebles',
+      openings: 'Puertas y ventanas',
+      lights: 'Iluminación',
+      finishes: 'Materiales y colores',
+    }
+    const heading = this.root.querySelector('#catalog-section-name')
+    if (heading) heading.textContent = titles[this.activeTab] ?? ''
+    const count = this.root.querySelector<HTMLElement>('#catalog-count')
+    if (count) {
+      count.textContent = String(container.querySelectorAll('.card').length)
+      count.hidden = this.activeTab === 'finishes'
+    }
   }
 
   // ── Acabados de pared y suelo ────────────────────────────────────────────
@@ -217,7 +231,7 @@ export class CatalogPanel {
       const empty = this.root.createElement('div')
       empty.className = 'catalog-empty'
       empty.textContent =
-        'Sin productos web todavía: ejecuta la ingesta del pipeline (npm run pipeline:ingest) y publícalos con npm run pipeline:link.'
+        'Todavía no hay muebles disponibles. Puedes seguir diseñando con puertas, ventanas, luces y acabados.'
       container.append(empty)
       return
     }

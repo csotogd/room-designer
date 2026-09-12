@@ -19,6 +19,7 @@ import { AddLightCommand, MoveLightCommand } from '../../app/commands/LightComma
 import { dropFurniture, surfaceAt } from '../../app/editor/FurnitureDrop'
 import { fitsInRoom } from '../../app/editor/RoomBounds'
 import { slideOffset } from '../../app/editor/OpeningDrag'
+import { waitForModels } from './models'
 import {
   buildFloor,
   buildFurniture,
@@ -30,12 +31,12 @@ import {
   type Pick,
 } from './builders'
 
-const DAY_SKY = new THREE.Color(0xe8f0f6)
+const DAY_SKY = new THREE.Color(0xf5f4f1)
 const NIGHT_SKY = new THREE.Color(0x151d2b)
 const SUN_WARM = new THREE.Color(0xffd9a0)
 const SUN_WHITE = new THREE.Color(0xffffff)
 const HOVER_TINT = 0x224466
-const SELECT_TINT = 0x0058a3
+const SELECT_TINT = 0x746d61
 const INVALID_TINT = 0xc0392b
 
 export type Placement =
@@ -77,6 +78,7 @@ export class View3D {
   private readonly renderer: THREE.WebGLRenderer
   private readonly scene = new THREE.Scene()
   private readonly camera: THREE.PerspectiveCamera
+  private viewportFit = 1
   private readonly controls: OrbitControls
   private readonly sun: THREE.DirectionalLight
   private readonly hemisphere: THREE.HemisphereLight
@@ -144,7 +146,7 @@ export class View3D {
 
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(70, 48),
-      new THREE.MeshStandardMaterial({ color: 0xcfd5c9, roughness: 1, side: THREE.DoubleSide }),
+      new THREE.ShadowMaterial({ color: 0x4b4a48, opacity: 0.18, side: THREE.DoubleSide }),
     )
     ground.geometry.rotateX(Math.PI / 2)
     ground.position.y = -0.012
@@ -207,6 +209,10 @@ export class View3D {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.camera.aspect = clientWidth / clientHeight
     this.camera.updateProjectionMatrix()
+    // Preserve the orbit while keeping the room framed in narrow viewports.
+    const fit = Math.max(1, clientHeight / clientWidth)
+    this.camera.position.sub(this.controls.target).multiplyScalar(fit / this.viewportFit).add(this.controls.target)
+    this.viewportFit = fit
   }
 
   frameRoom(): void {
@@ -214,6 +220,8 @@ export class View3D {
     const radius = this.roomRadius()
     this.controls.target.set(center.x, 0.7, center.z)
     this.camera.position.set(center.x + radius * 1.35, radius * 1.15, center.z + radius * 1.7)
+    this.viewportFit = Math.max(1, this.container.clientHeight / Math.max(1, this.container.clientWidth))
+    this.camera.position.sub(this.controls.target).multiplyScalar(this.viewportFit).add(this.controls.target)
     this.controls.update()
   }
 
@@ -253,7 +261,9 @@ export class View3D {
    * justo antes de leer el canvas (sin preserveDrawingBuffer el buffer se
    * vacía tras cada frame).
    */
-  captureScreenshot(): string {
+  async captureScreenshot(): Promise<string> {
+    this.flushIfDirty()
+    await waitForModels(this.project.furniture.map((furniture) => furniture.item))
     this.flushIfDirty()
     this.renderer.render(this.scene, this.camera)
     return this.renderer.domElement.toDataURL('image/png')
