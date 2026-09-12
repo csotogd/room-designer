@@ -34,3 +34,9 @@ Feature: Deploy isolated environments from protected branches
     When its smoke test runs
     Then the page, its JavaScript and its release identifier must be available
     And a stale release or a broken asset fails the deployment
+
+  Scenario: The private editor is verified with an audience-bound identity token
+    Given a ready private editor and a deploy identity allowed to mint only its own ID token
+    When the deployment verifies the editor
+    Then it requests an ID token for that editor without impersonating another access token
+    And it sends that token only to the private editor

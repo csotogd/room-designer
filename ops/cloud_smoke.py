@@ -84,6 +84,12 @@ class GoogleApi:
             time.sleep(1)
 
 
+def private_identity_token(api, service_account, audience):
+    # El CLI de impersonación exige permisos de acceso adicionales; aquí basta OIDC.
+    endpoint = f"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{service_account}:generateIdToken"
+    return api("POST", endpoint, {"audience": audience, "includeEmail": True})["token"]
+
+
 def main():
     project, environment, commit = (os.environ[key] for key in ("PROJECT_ID", "ENVIRONMENT", "COMMIT_SHA"))
     api = GoogleApi(command("gcloud", "auth", "print-access-token"))
@@ -93,8 +99,7 @@ def main():
     if service["template"]["containers"][0]["image"] != os.environ["EXPECTED_WEB_IMAGE"]:
         raise ValueError("Cloud Run no utiliza el digest probado")
     url = service["uri"]
-    token = command("gcloud", "auth", "print-identity-token", f"--audiences={url}",
-                    f"--impersonate-service-account=rd-{environment}-deploy@{project}.iam.gserviceaccount.com")
+    token = private_identity_token(api, f"rd-{environment}-deploy@{project}.iam.gserviceaccount.com", url)
 
     def fetch(path):
         request = Request(url + path, headers={"Authorization": f"Bearer {token}"})

@@ -1,6 +1,7 @@
 """Contratos de entrega: eventos reales, fallos y aislamiento, sin red."""
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -222,3 +223,70 @@ def test_quality_gate_executes_fail_closed(status):
                             "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]},
                             capture_output=True)
     assert (result.returncode == 0) == (status == "success")
+
+
+@pytest.fixture
+def verify_private_editor(cloud_smoke, monkeypatch, tmp_path):
+    url, commit, image = "https://editor.example", "a" * 40, "registry/editor@sha256:" + "b" * 64
+    for key, value in {"PROJECT_ID": "designer-dev-123", "ENVIRONMENT": "dev", "COMMIT_SHA": commit,
+                       "EXPECTED_WEB_IMAGE": image, "GITHUB_OUTPUT": str(tmp_path / "output"),
+                       "GITHUB_STEP_SUMMARY": str(tmp_path / "summary")}.items():
+        monkeypatch.setenv(key, value)
+    calls, visited = [], []
+
+    def api(method, endpoint, body=None):
+        calls.append((method, endpoint, body))
+        if endpoint.endswith(":generateIdToken"):
+            return {"token": "short-lived-token"}
+        return {"uri": url, "terminalCondition": {"state": "CONDITION_SUCCEEDED"},
+                "latestReadyRevision": "ready", "latestCreatedRevision": "ready",
+                "template": {"containers": [{"image": image}]}}
+
+    def credentials(*args):
+        assert args == ("gcloud", "auth", "print-access-token"), "No segunda impersonación de acceso"
+        return "existing-access-token"
+
+    pages = {"/": b'<script src="/assets/app.js"></script>',
+             "/release.json": json.dumps({"commit": commit}).encode(), "/assets/app.js": b"editor()"}
+
+    def fetch(request, timeout):
+        assert request.get_header("Authorization") == "Bearer short-lived-token"
+        assert request.full_url.startswith(url + "/")
+        visited.append(request.full_url)
+        return io.BytesIO(pages[request.full_url.removeprefix(url)])
+
+    monkeypatch.setattr(cloud_smoke, "command", credentials)
+    monkeypatch.setattr(cloud_smoke, "GoogleApi", lambda token: api)
+    monkeypatch.setattr(cloud_smoke, "verify_resources", lambda *args: None)
+    monkeypatch.setattr(cloud_smoke, "urlopen", fetch)
+
+    def verify():
+        cloud_smoke.main()
+        assert calls[-1] == (
+            "POST", "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+            "rd-dev-deploy@designer-dev-123.iam.gserviceaccount.com:generateIdToken",
+            {"audience": url, "includeEmail": True},
+        )
+        assert visited == [url + path for path in pages]
+        assert (tmp_path / "output").read_text() == f"frontend_url={url}\n"
+
+    return verify
+
+
+@scenario("The private editor is verified with an audience-bound identity token")
+def test_private_editor_uses_only_its_existing_id_token_permission(verify_private_editor):
+    verify_private_editor()
+
+
+def test_identity_token_is_minted_directly_for_its_audience(cloud_smoke):
+    calls = []
+
+    def api(*args):
+        calls.append(args)
+        return {"token": "short-lived-token"}
+
+    token = cloud_smoke.private_identity_token(api, "deploy@example.com", "https://editor.example")
+    assert token == "short-lived-token"
+    assert calls == [("POST", "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+                      "deploy@example.com:generateIdToken",
+                      {"audience": "https://editor.example", "includeEmail": True})]
