@@ -23,23 +23,35 @@ variable "environment" {
   }
 }
 
+variable "enable_airflow" {
+  description = "Habilitar permisos de Airflow solo en el entorno que se vaya a operar"
+  type        = bool
+  default     = false
+}
+
 locals {
-  apis = toset([
+  apis = toset(concat([
     "iam.googleapis.com", "iamcredentials.googleapis.com", "sts.googleapis.com",
     "cloudresourcemanager.googleapis.com", "serviceusage.googleapis.com",
     "run.googleapis.com", "cloudscheduler.googleapis.com", "pubsub.googleapis.com",
     "firestore.googleapis.com", "secretmanager.googleapis.com",
     "artifactregistry.googleapis.com", "storage.googleapis.com", "cloudbuild.googleapis.com",
-  ])
+    ], var.enable_airflow ? [
+    "compute.googleapis.com", "iap.googleapis.com", "monitoring.googleapis.com", "logging.googleapis.com",
+  ] : []))
   # Terraform administra IAM además de recursos. Esta identidad es de confianza:
   # no se entrega a PR y sus ramas deben quedar protegidas antes de activar WIF.
-  deploy_roles = toset([
+  deploy_roles = toset(concat([
     "roles/run.admin", "roles/storage.admin", "roles/datastore.owner",
     "roles/pubsub.admin", "roles/cloudscheduler.admin", "roles/secretmanager.admin",
     "roles/iam.serviceAccountAdmin", "roles/iam.serviceAccountUser",
     "roles/resourcemanager.projectIamAdmin", "roles/serviceusage.serviceUsageConsumer",
     "roles/cloudbuild.builds.editor",
-  ])
+    ], var.enable_airflow ? [
+    "roles/compute.instanceAdmin.v1", "roles/compute.networkAdmin", "roles/compute.securityAdmin",
+    "roles/compute.storageAdmin", "roles/compute.osAdminLogin", "roles/iap.tunnelResourceAccessor",
+    "roles/monitoring.editor", "roles/logging.configWriter",
+  ] : []))
 }
 
 resource "google_project_service" "apis" {
