@@ -1,18 +1,27 @@
-import type { DesignerAction, DesignerRoomState, DesignerVerdict } from './actions'
+import type { DesignerAction, DesignerJudgement, DesignerRoomState, EditResult, ManualEdit, EvaluationTicket } from './actions'
 
 export interface DesignerReply {
   requestId: string
+  runId: string
+  evaluation: EvaluationTicket
   reply: string
   actions: DesignerAction[]
   state: DesignerRoomState
   rejected: { reason: string }[]
+  /** Encargo del usuario contra el que debe juzgarse la escena resultante. */
+  judgeBrief?: string
+  /** true: es un turno del bucle juez→agente, no una respuesta al usuario. */
+  refinement?: boolean
+  round?: number
 }
 
 export interface DesignerEvents {
   onState(state: DesignerRoomState): void
   onReply(reply: DesignerReply): void
-  onVerdict(requestId: string, verdict: DesignerVerdict): void
-  onError(error: string): void
+  onJudgement(judgement: DesignerJudgement): void
+  onStopped?(runId: string, reason: string): void
+  onEdit?(result: EditResult): void
+  onError(error: string, context?: { runId?: string; requestId?: string; state?: DesignerRoomState }): void
   onConnection(connected: boolean): void
 }
 
@@ -61,9 +70,16 @@ export class DesignerClient {
       }
       if (message.type === 'state') this.events.onState(message.state as DesignerRoomState)
       else if (message.type === 'reply') this.events.onReply(message as unknown as DesignerReply)
+      else if (message.type === 'edit.result' || message.type === 'edit.conflict') this.events.onEdit?.(message as unknown as EditResult)
       else if (message.type === 'judge.result') {
-        this.events.onVerdict(String(message.requestId), message.verdict as DesignerVerdict)
-      } else if (message.type === 'error') this.events.onError(String(message.error))
+        this.events.onJudgement(message as unknown as DesignerJudgement)
+      } else if (message.type === 'loop.stopped') {
+        this.events.onStopped?.(String(message.runId), String(message.reason))
+      } else if (message.type === 'error') this.events.onError(String(message.error), {
+        runId: typeof message.runId === 'string' ? message.runId : undefined,
+        requestId: typeof message.requestId === 'string' ? message.requestId : undefined,
+        state: message.state as DesignerRoomState | undefined,
+      })
     })
   }
 
@@ -71,16 +87,26 @@ export class DesignerClient {
     return this.socket?.readyState === WebSocket.OPEN
   }
 
-  chat(text: string): string {
-    return this.send({ type: 'chat', text })
+  chat(text: string, revision?: string): string {
+    return this.send({ type: 'chat', text, revision })
   }
 
-  judge(brief: string, imageDataUrl: string): string {
-    return this.send({ type: 'judge', brief, image: imageDataUrl })
+  get endpoint(): string { return this.url }
+
+  edit(edit: ManualEdit): void {
+    this.send({ type: 'edit', ...edit }, edit.requestId)
   }
 
-  private send(payload: Record<string, unknown>): string {
-    const requestId = `ui-${Date.now().toString(36)}-${(this.counter++).toString(36)}`
+  judge(imageDataUrl: string, ticket: EvaluationTicket): string {
+    return this.send({ type: 'judge', image: imageDataUrl, ...ticket })
+  }
+
+  stop(runId?: string): void {
+    this.send({ type: 'stop', runId })
+  }
+
+  private send(payload: Record<string, unknown>, id?: string): string {
+    const requestId = id ?? `ui-${Date.now().toString(36)}-${(this.counter++).toString(36)}`
     if (!this.connected) {
       this.events.onError('El servicio de diseño no está conectado.')
       return requestId

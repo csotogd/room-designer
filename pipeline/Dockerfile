@@ -1,19 +1,10 @@
-# Imagen del pipeline (ingesta + generador) para Cloud Run.
-# Local: docker build -f pipeline/Dockerfile -t pipeline .
-FROM node:22-slim
-
+FROM python:3.12-slim
 WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm install tsx sharp @gradio/client
-
-COPY pipeline ./pipeline
-COPY tsconfig.json ./
-
-# Entrypoints:
-#   ingest [--site sklum --country es --limit 200]
-#   generate [--site sklum]
-#   judge [--site sklum]
-#   serve-generator   (HTTP para push de Pub/Sub; ciclo siguiente)
-ENTRYPOINT ["npx", "tsx"]
-CMD ["pipeline/cli/ingest.ts"]
+COPY pyproject.toml requirements.lock ./
+COPY backend/room_designer ./backend/room_designer
+RUN pip install --no-cache-dir -c requirements.lock '.[mesh,clip]' && useradd --create-home app
+COPY services/search/eval ./services/search/eval
+RUN mkdir -p /app/data /app/public && chown -R app:app /app/data /app/public
+USER app
+ENTRYPOINT ["catalog"]
+CMD ["ingest"]

@@ -4,7 +4,6 @@
   "mutate": [
     "src/core/**/*.ts",
     "src/app/**/*.ts",
-    "pipeline/core/**/*.ts",
     "!src/app/importers/**",
     "!src/app/designer/DesignerClient.ts",
     "!src/core/util/id.ts"
@@ -15,5 +14,6 @@
   "reporters": ["clear-text", "progress"],
   "thresholds": { "high": 85, "low": 70, "break": 75 },
   "tempDirName": ".stryker-tmp",
+  "ignorePatterns": ["/.venv", "/data", "/public/catalog", "/dist", "/coverage", "/.pytest_cache", "/.ruff_cache"],
   "cleanTempDir": true
 }

@@ -1,115 +1,149 @@
-# Diseñador conversacional
+# Diseñador Python + Google ADK
 
-Microservicio de chat que convierte un brief («créame una oficina para 4,
-moderna») en **acciones sobre la habitación**: `setRoom`, `placeNew`,
-`replace`, `move`, `rotate`, `remove`. El estado vive en **un fichero** con
-los muebles, sus coordenadas 3D y el log completo de cambios; el front (panel
-de chat a la derecha) aplica las acciones a través del dominio — un turno de
-chat = una entrada de undo.
-
-## Cómo funciona un `placeNew`
-
-```
-brief ─▶ LLM (brain) ─▶ intención con searchQuery
-             │
-             ▼
-   microservicio de búsqueda (top-20 del catálogo real)
-             │  foto + precio + descripción + medidas
-             ▼
-   VLM picker: elige el candidato que mejor encaja (no siempre el 1º)
-             │
-             ▼
-   posición propuesta ─▶ GUARDRAILS ─▶ acción aplicada al fichero
-```
-
-**Guardrails duros** (el LLM propone, la geometría dispone): nada fuera de la
-habitación, nada volando (y=0), nada tapando una ventana (salvo muebles bajo
-el alféizar) ni bloqueando el barrido de una puerta, y sin colisiones. Si una
-posición no vale, se busca el hueco válido más cercano (anillos de 25 cm,
-rotación ±90°); si no hay hueco, la intención se **rechaza con motivo** —
-nunca se aplica en silencio.
-
-**VLM judge**: el front captura un screenshot de la escena tras aplicar las
-acciones y lo manda al juez, que puntúa 1–10 un rubric de **cohesión,
-colores, estilo y adherencia al brief**. La evidencia se persiste antes de
-juzgar: **en local, fichero** (`data/designer/screenshots/`); **en cloud,
-bucket GCS** (`SCREENSHOT_BUCKET`, subida por API JSON con el token del
-metadata server — sin SDK).
-
-## Arranque local
+Código: [`backend/room_designer`](../../backend/room_designer).
+Arquitectura y límites: [ARCHITECTURE.md](../../ARCHITECTURE.md).
 
 ```bash
-npm run search:serve     # el buscador (8787) es dependencia
-npm run designer:serve   # WebSocket + HTTP en 8790
-npm run dev              # la app: el panel «Diseñador» a la derecha
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -c requirements.lock -e '.[dev,clip,mesh]'
+npm run search:serve
+npm run designer:serve
+npm run dev
 ```
 
-Sin `ANTHROPIC_API_KEY`, el servicio usa **proveedores fake deterministas**
-(plantillas de oficina/dormitorio, picker léxico, juez constante): todo el
-flujo funciona offline y es lo que usan los tests. Con la key en `.env`, los
-tres papeles pasan a Claude (`claude-opus-5` por defecto).
+Ejecuta los tres últimos comandos en terminales distintas. Alternativamente,
+activa `.venv` y usa `search-serve` / `designer-serve` sin npm.
 
-## Protocolo WebSocket (`/ws`)
+## Conexiones
 
-| Mensaje | Respuesta |
-|---|---|
-| `{type:'chat', requestId, text}` | `{type:'reply', requestId, reply, actions[], state, rejected[]}` |
-| `{type:'judge', requestId, brief, image}` | `{type:'judge.result', requestId, verdict, evidence}` |
-| (al conectar) | `{type:'state', state}` — el front restaura la sala guardada |
-
-HTTP: `GET /healthz` · `GET /metrics` · `GET /state`. `DESIGNER_TOKEN`
-protege el WS (`?token=`).
-
-## El fichero de la habitación
-
-`data/designer/room-<site>.json` (escritura atómica tmp+rename):
-
-```jsonc
-{
-  "version": 1,
-  "room": { "shape": "rect", "w": 5, "d": 4, "h": 2.6 },
-  "openings": [{ "wall": "N", "kind": "window", "offset": 1.5, "width": 1.4 }],
-  "items": [{ "uid": "it-…", "productId": "polyhaven-WoodenTable_01", "x": 1, "y": 0, "z": 1.3, "rotDeg": 0 }],
-  "log": [{ "at": "…", "source": "assistant", "requestId": "…", "action": { … } }]
-}
-```
-
-Reproducir el log desde cero reconstruye el estado. Es la fase "fichero +
-websocket" del plan; la migración (Firestore/Postgres + Connect) cambia el
-adaptador de persistencia, no el dominio.
-
-## Configuración
-
-| Variable | Default | Uso |
+| Proveedor | Configuración | Conector ADK |
 |---|---|---|
-| `DESIGNER_PORT` | `8790` | puerto |
-| `DESIGNER_PROVIDER` | `auto` | `anthropic` \| `fake` \| `auto` (anthropic si hay key) |
-| `ANTHROPIC_API_KEY` | — | proveedor anthropic |
-| `DESIGNER_MODEL` | `claude-opus-5` | modelo de brain/picker/judge |
-| `DESIGNER_TOKEN` | — | token del WS |
-| `DESIGNER_ROOM_FILE` | `data/designer/room-<site>.json` | fichero de estado |
-| `DESIGNER_SCREENSHOT_DIR` | `data/designer/screenshots` | evidencia local del juez |
-| `SCREENSHOT_BUCKET` | — | bucket GCS para la evidencia (vía cloud) |
-| `SEARCH_URL` | `http://localhost:8787` | microservicio de búsqueda |
-| `CATALOG_SITE`, `LOG_LEVEL` | | como el resto del repo |
+| Gemini | `DESIGNER_PROVIDER=gemini`, `GOOGLE_API_KEY` o `GEMINI_API_KEY` | Gemini nativo, AI Studio |
+| GPT | `DESIGNER_PROVIDER=openai`, `OPENAI_API_KEY` | LiteLlm |
+| Claude | `DESIGNER_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` | LiteLlm, API directa |
+| Prueba offline | `DESIGNER_PROVIDER=fake` | Runner ADK con modelo determinista |
 
-En el front: `VITE_DESIGNER_URL` (`ws://localhost:8790/ws`).
+`DESIGNER_MODEL` cambia el modelo. Valores por defecto: `gemini-2.5-flash`,
+`gpt-4.1`, `claude-sonnet-4-6`. `auto` elige Gemini → Anthropic → OpenAI por
+clave disponible y fake si no hay ninguna. Un proveedor explícito sin clave
+produce error de configuración. `OPENAI_BASE_URL` admite endpoints
+compatibles. Las claves permanecen en el servidor.
 
-## Observabilidad
+Para mezclar modelos: `DESIGNER_PICKER_PROVIDER`, `DESIGNER_PICKER_MODEL`,
+`DESIGNER_JUDGE_PROVIDER`, `DESIGNER_JUDGE_MODEL`; cada rol acepta además
+`*_API_KEY` y `*_BASE_URL`. Un cambio de proveedor no modifica las tools.
 
-Logs JSON con `requestId` por turno (plan del cerebro, producto elegido con
-nº de candidatos, veredictos con su evidencia, rechazos con motivo),
-`/metrics` con latencias por operación. Cada screenshot juzgado queda
-guardado junto a su `requestId`: veredicto reproducible y auditable.
+## Tools y persistencia
 
-## Nube
+Las diez tools son `get_room`, `search_catalog`, `set_room`, `add_opening`,
+`clear_openings`, `place_furniture`, `replace_furniture`, `move_furniture`,
+`rotate_furniture`, `remove_furniture`. Colocar/reemplazar incluye búsqueda,
+selección visual y guardrails. Los cambios se preparan en una copia; sólo se
+persisten cuando ADK termina el turno. Los rechazos geométricos son explícitos.
 
-```bash
-docker build -f services/designer/Dockerfile -t catalog-designer .
-docker run -p 8790:8790 -v designer-data:/data \
-  -e DESIGNER_ROOM_FILE=/data/room.json -e ANTHROPIC_API_KEY=... catalog-designer
-```
+`place_furniture(search_query, x, z, rotation=0, role="", y=0)` y
+`move_furniture(uid, x, z, y=None)` permiten elegir la posición en 3D, en metros.
+`y` mide la distancia del suelo a la base del mueble: `0` lo coloca en el suelo.
+Omitir `y` al mover conserva la altura actual; reemplazar también la conserva.
+Los productos mantienen sus dimensiones de catálogo. La reparación puede ajustar
+la posición horizontal, pero conserva la altura elegida. Se rechazan alturas
+negativas o que hagan sobresalir el mueble por el techo; las colisiones entre
+muebles y con aperturas tienen en cuenta el solapamiento vertical.
+La altura se guarda en el estado y el log, se restaura al recargar y se deshace
+con el resto del turno. Las acciones antiguas sin `y` siguen siendo compatibles.
 
-Cloud Run con disco/volumen para el room file (o migrar persistencia a
-Firestore), `SCREENSHOT_BUCKET` para la evidencia del juez, `SEARCH_URL`
-apuntando al servicio de búsqueda interno y las keys en Secret Manager.
+El estado permanece en `data/designer/room-<site>.json`: versión 1, habitación,
+aperturas, items, log y conversación reciente opcional. Los ficheros previos
+son compatibles. Un worker por fichero; no ejecutar varias réplicas sobre
+el mismo JSON. Los screenshots del juez se guardan antes de enviar al modelo.
+
+## Protocolo
+
+| Mensaje `/ws` | Respuesta |
+|---|---|
+| al conectar | `{type:'state', state}` |
+| `{type:'chat', requestId, text, revision?}` | `{type:'reply', requestId, runId, evaluation, reply, actions, state, rejected, round, refinement}` |
+| `{type:'edit', requestId, baseRevision, base, desired}` | `{type:'edit.result', requestId, state, changed, rebased}` o `{type:'edit.conflict', requestId, state, conflicts}` |
+| `{type:'judge', requestId, runId, revision, image}` | `{type:'judge.result', requestId, runId, revision, verdict, mean, target, judgeText, feedback, refining, round, stopReason, evidence, state}` |
+| `{type:'stop', requestId, runId?}` | `{type:'loop.stopped', runId, reason}` |
+| Captura de otra revisión/ciclo, duplicada o sin turno pendiente | `{type:'judge.ignored', requestId, reason}` |
+| error | `{type:'error', requestId, error}` |
+
+HTTP: `GET /healthz`, `GET /metrics`, `GET /state`. Otros clientes reciben
+un mensaje `state` tras los cambios. `image` debe ser PNG base64 o data URL.
+
+**Edición manual compartida:** el editor envía la escena al terminar el arrastre;
+agrupa otras ediciones durante 250 ms. `base` es la escena de partida y `desired`
+la edición local: plano, aperturas, muebles con UID/posición 3D/giro/apoyos,
+luces, hora y acabados. El servidor valida y combina cada lote con el estado
+actual bajo el mismo bloqueo que usan las tools. Dos muebles distintos pueden
+cambiar simultáneamente; modificar el mismo mueble o cambiar el plano durante
+otra edición produce un conflicto. El chat ofrece «Conservar mis cambios» y
+«Usar versión compartida» antes de volver a guardar.
+
+El borrador y la petición pendiente permanecen en `sessionStorage` de esa
+pestaña durante recargas y desconexiones. Al reconectar se reenvía el mismo
+`requestId`: los últimos 100 recibos persistidos evitan duplicar la edición
+si se perdió la confirmación. La cola admite una petición en vuelo y conserva
+las ediciones posteriores. Cerrar la pestaña elimina esta recuperación local.
+
+Antes de iniciar al agente, el chat espera todas las confirmaciones y envía
+la revisión guardada. Si otra edición cambia esa revisión antes del turno,
+el servidor devuelve el estado nuevo y pide reenviar el encargo. Una edición
+manual detiene el ciclo activo e invalida la nota actual, conservando su
+historial. Cada turno ADK carga la escena persistida, incluido el ambiente.
+
+El contrato de agentes admite actualmente **planos rectangulares**. Un plano
+manual en L o libre se conserva en el editor y bloquea el guardado compartido
+y el turno del agente con un aviso; no se convierte a un rectángulo.
+
+**Bucle juez→agente:** cada veredicto se registra en el estado (nota actual,
+historial y conversación en lenguaje natural). El agente lee esa conversación
+en sus turnos posteriores. `application/workflow.py` coordina el ciclo;
+el WebSocket se limita a recibir comandos y entregar eventos.
+
+La media aritmética de cohesión, colores, estilo y adherencia debe alcanzar
+`DESIGNER_JUDGE_TARGET` (7 por defecto, entre 1 y 10). `overall` es informativo
+y no decide el paro. No se redondea antes de comparar. No hay límite de
+rondas ni paro por estancamiento: incluso una ronda sin acciones vuelve a
+capturarse y evaluarse. `DESIGNER_JUDGE_PATIENCE` se ha retirado.
+
+Cada respuesta entrega `evaluation: {runId, revision}`. El cliente espera
+la carga de los modelos 3D, captura el PNG y devuelve **ese mismo ticket**.
+El servidor lo consume una sola vez y conserva el encargo original, aunque
+el cliente envíe otro `brief`. Tras una nota baja, entrega el veredicto y
+lanza automáticamente un turno con las observaciones del juez.
+
+El chat muestra las intervenciones de ambos, las cuatro notas, la media y
+un historial desplegable. Después de modificar la habitación, la nota
+anterior queda en el historial y la actual aparece pendiente de evaluación.
+La conversación y las últimas 20 evaluaciones sobreviven a una recarga;
+la numeración del ciclo no depende del tamaño de ese historial.
+
+**Detener** cancela también una llamada al agente/juez en curso. Un encargo
+nuevo sustituye el ciclo anterior. Una desconexión, una edición manual o
+un fallo de aplicación/carga/captura interrumpen el ciclo y lo indican en
+el chat. Los cambios de un turno cancelado no se guardan. Al reconectar
+se restaura el estado; no se reinician llamadas al modelo automáticamente.
+
+Un ciclo pertenece a la pestaña que entrega sus capturas. Las demás reciben
+estados con conversación y notas. Los clientes deben actualizarse juntos
+con el servidor: las capturas sin `runId`/`revision` ya no se aceptan.
+
+| Variable | Valor por defecto |
+|---|---|
+| `DESIGNER_PORT` | 8790 (`PORT` tiene precedencia en contenedores) |
+| `DESIGNER_JUDGE_TARGET` | 7 (media de las cuatro métricas) |
+| `DESIGNER_TURN_TIMEOUT` | 180 segundos |
+| `DESIGNER_ROOM_FILE` | `data/designer/room-<site>.json` |
+| `DESIGNER_SCREENSHOT_DIR` | `data/designer/screenshots` |
+| `SCREENSHOT_BUCKET` | sin definir: evidencia local |
+| `SEARCH_URL` | `http://localhost:8787` |
+| `DESIGNER_TOKEN` | opcional, protege WS y `/state` |
+| `DESIGNER_ALLOWED_ORIGINS` | lista separada por comas; sin token se admiten también orígenes locales |
+| `CATALOG_INDEX` | `public/catalog/index-<site>.json` |
+
+Los tests ejecutan las tools reales de ADK sin llamadas facturables. La
+integración de los tres proveedores se verifica con respuestas remotas
+simuladas. Para activar una conexión real configura la clave correspondiente
+en `.env` y reinicia el servicio.

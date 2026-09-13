@@ -10,9 +10,13 @@ variable "region" {
 }
 
 variable "environment" {
-  description = "Entorno (dev, staging, prod)"
+  description = "Entorno (dev, stage, prod)"
   type        = string
   default     = "dev"
+  validation {
+    condition     = contains(["dev", "stage", "prod"], var.environment)
+    error_message = "Entorno permitido: dev, stage o prod."
+  }
 }
 
 # Un catálogo por proveedor/país: cada entrada programa su propia ingesta.
@@ -62,8 +66,31 @@ variable "vlm_image_decode_enabled" {
   default     = false
 }
 
-variable "pipeline_image_tag" {
-  description = "Tag de la imagen de contenedor del pipeline"
+variable "pipeline_image" {
+  description = "Imagen de catálogo por digest; nunca latest"
   type        = string
-  default     = "latest"
+  default     = null
+  validation {
+    condition     = var.pipeline_image == null ? true : can(regex("@sha256:[a-f0-9]{64}$", var.pipeline_image))
+    error_message = "La imagen de catálogo debe fijarse por digest SHA256."
+  }
+}
+
+variable "web_image" {
+  description = "Imagen del editor probada por CI, fijada por digest SHA256"
+  type        = string
+  validation {
+    condition     = can(regex("@sha256:[a-f0-9]{64}$", var.web_image))
+    error_message = "La imagen web debe fijarse por digest SHA256."
+  }
+}
+
+variable "enable_catalog_runtime" {
+  description = "No habilitar hasta implementar y validar los adaptadores cloud del catálogo"
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_catalog_runtime
+    error_message = "Faltan serve-generator y los adaptadores GCS/Firestore/PubSub: el catálogo cloud aún no es desplegable."
+  }
 }
