@@ -8,14 +8,17 @@
     "dev": "vite --port ${PORT:-5173}",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "pipeline:ingest": "tsx --env-file-if-exists=.env pipeline/cli/ingest.ts",
-    "pipeline:generate": "tsx --env-file-if-exists=.env pipeline/cli/generate.ts",
-    "pipeline:link": "tsx --env-file-if-exists=.env pipeline/cli/link.ts",
-    "pipeline:judge": "tsx --env-file-if-exists=.env pipeline/cli/judge.ts",
-    "search:serve": "tsx --env-file-if-exists=.env services/search/server.ts",
-    "designer:serve": "tsx --env-file-if-exists=.env services/designer/server.ts",
-    "search:sync": "tsx --env-file-if-exists=.env pipeline/cli/searchSync.ts",
-    "search:eval": "tsx --env-file-if-exists=.env services/search/eval/run.ts"
+    "pipeline:ingest": ".venv/bin/catalog ingest",
+    "pipeline:generate": ".venv/bin/catalog generate",
+    "pipeline:link": ".venv/bin/catalog link",
+    "pipeline:judge": ".venv/bin/catalog judge",
+    "search:serve": ".venv/bin/search-serve",
+    "designer:serve": ".venv/bin/designer-serve",
+    "search:sync": ".venv/bin/catalog sync",
+    "search:eval": ".venv/bin/catalog eval",
+    "test:backend": ".venv/bin/python -m pytest",
+    "test:all": "npm run test:backend && vitest run",
+    "lint:backend": ".venv/bin/ruff check backend"
   },
   "keywords": [],
   "author": "",
@@ -25,21 +28,16 @@
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "^26.4.1",
     "@types/three": "^0.185.4",
-    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.11",
     "fast-check": "^4.9.0",
+    "jsdom": "^30.0.1",
     "sharp": "^0.35.4",
-    "tsx": "^4.23.13",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.125.0",
-    "@gradio/client": "^2.5.1",
-    "@huggingface/transformers": "^4.2.0",
-    "three": "^0.185.1",
-    "ws": "^8.21.3"
+    "three": "^0.185.1"
   },
   "type": "module"
 }

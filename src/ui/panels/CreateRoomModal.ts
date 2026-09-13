@@ -14,6 +14,7 @@ export class CreateRoomModal {
   private shape: 'rect' | 'l' = 'rect'
   private openingKind: 'door' | 'window' = 'door'
   private plan: FloorPlan | null = null
+  private previousFocus: HTMLElement | null = null
 
   constructor(
     private readonly root: Document,
@@ -24,6 +25,7 @@ export class CreateRoomModal {
         this.shape = card.dataset.shape as 'rect' | 'l'
         for (const c of root.querySelectorAll('.shape-card')) {
           c.classList.toggle('active', c === card)
+          c.setAttribute('aria-pressed', String(c === card))
         }
         for (const field of root.querySelectorAll<HTMLElement>('.l-only')) {
           field.hidden = this.shape !== 'l'
@@ -35,26 +37,59 @@ export class CreateRoomModal {
         this.openingKind = button.dataset.opening as 'door' | 'window'
         for (const b of root.querySelectorAll('#opening-toggle button')) {
           b.classList.toggle('active', b === button)
+          b.setAttribute('aria-pressed', String(b === button))
         }
       })
     }
     root.querySelector('#wizard-next')!.addEventListener('click', () => this.toStep2())
     root.querySelector('#wizard-back')!.addEventListener('click', () => this.showStep(1))
     root.querySelector('#create-room')!.addEventListener('click', () => this.create())
+    root.querySelector('#modal-close')?.addEventListener('click', () => this.hide())
+    root.querySelector('#create-modal')?.addEventListener('keydown', (event) => {
+      const e = event as KeyboardEvent
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        this.hide()
+      }
+      if (e.key !== 'Tab') return
+      const controls = [...root.querySelectorAll<HTMLElement>('#create-modal button, #create-modal input')]
+        .filter((el) => !el.closest('[hidden]') && !el.hasAttribute('disabled'))
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (e.shiftKey && root.activeElement === first) {
+        e.preventDefault()
+        last?.focus()
+      } else if (!e.shiftKey && root.activeElement === last) {
+        e.preventDefault()
+        first?.focus()
+      }
+    })
   }
 
   show(): void {
+    this.previousFocus = this.root.activeElement as HTMLElement | null
     this.root.querySelector<HTMLElement>('#modal-backdrop')!.hidden = false
+    this.setWorkspaceInert(true)
     this.showStep(1)
   }
 
   hide(): void {
     this.root.querySelector<HTMLElement>('#modal-backdrop')!.hidden = true
+    this.setWorkspaceInert(false)
+    if (this.previousFocus?.isConnected && !this.previousFocus.closest('[hidden], [inert]')) {
+      this.previousFocus.focus()
+    } else this.root.querySelector<HTMLElement>('#new-room')?.focus()
+  }
+
+  private setWorkspaceInert(inert: boolean): void {
+    for (const element of this.root.querySelectorAll<HTMLElement>('#topbar, #stage')) element.inert = inert
   }
 
   private showStep(step: 1 | 2): void {
     this.root.querySelector<HTMLElement>('#wizard-step-1')!.hidden = step !== 1
     this.root.querySelector<HTMLElement>('#wizard-step-2')!.hidden = step !== 2
+    this.root.querySelector('#create-modal')?.setAttribute('aria-labelledby', `wizard-title-${step}`)
+    this.root.querySelector<HTMLElement>(step === 1 ? '.shape-card.active' : '#opening-toggle .active')?.focus()
   }
 
   private value(id: string): number {
@@ -115,7 +150,7 @@ export class CreateRoomModal {
         'points',
         polygon.vertices.map((v) => `${v.x},${v.y}`).join(' '),
       )
-      floor.setAttribute('fill', '#fdfaf2')
+      floor.setAttribute('fill', '#f8f7f4')
       svg.append(floor)
     }
 
@@ -129,7 +164,7 @@ export class CreateRoomModal {
       line.setAttribute('y1', String(wall.start.y))
       line.setAttribute('x2', String(wall.end.x))
       line.setAttribute('y2', String(wall.end.y))
-      line.setAttribute('stroke', '#2a241c')
+      line.setAttribute('stroke', '#191919')
       line.setAttribute('stroke-width', '0.16')
       line.setAttribute('stroke-linecap', 'square')
       svg.append(line)
@@ -164,7 +199,7 @@ export class CreateRoomModal {
     label.setAttribute('x', String(x))
     label.setAttribute('y', String(y))
     label.setAttribute('text-anchor', 'middle')
-    label.setAttribute('fill', '#a89f92')
+    label.setAttribute('fill', '#747474')
     label.setAttribute('font-size', '0.28')
     label.setAttribute('font-weight', '600')
     label.setAttribute('letter-spacing', '0.02')
@@ -196,7 +231,7 @@ export class CreateRoomModal {
     gap.setAttribute('y1', String(a.y))
     gap.setAttribute('x2', String(b.x))
     gap.setAttribute('y2', String(b.y))
-    gap.setAttribute('stroke', '#fdfaf2')
+    gap.setAttribute('stroke', '#f8f7f4')
     gap.setAttribute('stroke-width', '0.2')
     svg.append(gap)
 
@@ -210,13 +245,13 @@ export class CreateRoomModal {
         'd',
         `M ${a.x} ${a.y} L ${b.x} ${b.y} A ${w} ${w} 0 0 ${sweep} ${ex} ${ey} Z`,
       )
-      wedge.setAttribute('fill', 'rgba(180, 87, 46, 0.08)')
+      wedge.setAttribute('fill', 'rgba(25, 25, 25, 0.06)')
       svg.append(wedge)
 
       const arc = this.root.createElementNS(SVG_NS, 'path')
       arc.setAttribute('d', `M ${b.x} ${b.y} A ${w} ${w} 0 0 ${sweep} ${ex} ${ey}`)
       arc.setAttribute('fill', 'none')
-      arc.setAttribute('stroke', '#b4572e')
+      arc.setAttribute('stroke', '#191919')
       arc.setAttribute('stroke-width', '0.035')
       arc.setAttribute('stroke-dasharray', '0.09 0.07')
       svg.append(arc)
@@ -226,7 +261,7 @@ export class CreateRoomModal {
       leaf.setAttribute('y1', String(a.y))
       leaf.setAttribute('x2', String(ex))
       leaf.setAttribute('y2', String(ey))
-      leaf.setAttribute('stroke', '#b4572e')
+      leaf.setAttribute('stroke', '#191919')
       leaf.setAttribute('stroke-width', '0.07')
       leaf.setAttribute('stroke-linecap', 'round')
       svg.append(leaf)
@@ -237,7 +272,7 @@ export class CreateRoomModal {
         frame.setAttribute('y1', String(a.y + ny * offset))
         frame.setAttribute('x2', String(b.x + nx * offset))
         frame.setAttribute('y2', String(b.y + ny * offset))
-        frame.setAttribute('stroke', '#5a7d99')
+        frame.setAttribute('stroke', '#6b827d')
         frame.setAttribute('stroke-width', '0.045')
         svg.append(frame)
       }

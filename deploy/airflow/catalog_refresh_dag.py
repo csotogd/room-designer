@@ -67,42 +67,42 @@ with DAG(
 
     sync_embeddings = BashOperator(
         task_id="sync_embeddings",
-        bash_command=f"cd {REPO_DIR} && npm run search:sync",
+        bash_command=f"cd {REPO_DIR} && catalog sync",
         retries=3,  # es la tarea más barata de reintentar y la más importante
         retry_delay=timedelta(minutes=5),
     )
 
     verify_consistency = BashOperator(
         task_id="verify_consistency",
-        bash_command=f"cd {REPO_DIR} && npm run search:sync -- --verify",
+        bash_command=f"cd {REPO_DIR} && catalog sync --verify",
     )
 
     eval_search_quality = BashOperator(
         task_id="eval_search_quality",
-        bash_command=f"cd {REPO_DIR} && npm run search:eval",
+        bash_command=f"cd {REPO_DIR} && catalog eval",
     )
 
     for site, options in SITES.items():
         ingest = BashOperator(
             task_id=f"ingest_{site}",
-            bash_command=f"cd {REPO_DIR} && npm run pipeline:ingest -- --site {site}",
+            bash_command=f"cd {REPO_DIR} && catalog ingest --site {site}",
             execution_timeout=timedelta(hours=4),  # bibliotecas 3D: descarga completa
         )
 
         publish_catalog = BashOperator(
             task_id=f"publish_catalog_{site}",
-            bash_command=f"cd {REPO_DIR} && npm run pipeline:link -- --site {site}",
+            bash_command=f"cd {REPO_DIR} && catalog link --site {site}",
         )
 
         if options["generated_3d"]:
             generate = BashOperator(
                 task_id=f"generate_{site}",
-                bash_command=f"cd {REPO_DIR} && npm run pipeline:generate -- --site {site}",
+                bash_command=f"cd {REPO_DIR} && catalog generate --site {site}",
                 execution_timeout=timedelta(hours=4),
             )
             judge = BashOperator(
                 task_id=f"judge_{site}",
-                bash_command=f"cd {REPO_DIR} && npm run pipeline:judge -- --site {site}",
+                bash_command=f"cd {REPO_DIR} && catalog judge --site {site}",
             )
             ingest >> generate >> judge >> publish_catalog
         else:

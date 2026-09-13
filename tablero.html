@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tablero · Room Designer</title>
+  <style>
+    :root { color-scheme: light; --ink:#242724; --muted:#747871; --line:#e2e5dd; --paper:#f7f8f4; --green:#345f45; --soft-green:#e8efe5; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,input,select,textarea { font:inherit; }
+    button,select { cursor:pointer; }
+    button { color:inherit; }
+    button:disabled { cursor:default; }
+    button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible { outline:3px solid #81a78b; outline-offset:3px; }
+    button { transition:background .15s,box-shadow .15s; }
+    a { color:inherit; }
+    .layout { display:grid; grid-template-columns:224px minmax(0,1fr); min-height:100vh; }
+    .sidebar { border-right:1px solid var(--line); background:#eff1e9; padding:32px 20px 24px; display:flex; flex-direction:column; gap:36px; }
+    .brand { display:flex; align-items:center; gap:11px; padding:0 8px; font-size:15px; font-weight:650; letter-spacing:-.4px; }
+    .brand-icon { width:34px; height:34px; background:var(--green); color:white; display:grid; place-items:center; border-radius:10px; font-size:18px; }
+    .eyebrow { margin:0 0 12px; color:var(--muted); font-size:10px; font-weight:650; letter-spacing:1.5px; text-transform:uppercase; }
+    .project { padding:0 9px; }
+    .project-name { margin:0; font-size:15px; font-weight:600; }
+    .project-caption { margin:3px 0 0; font-size:12px; color:var(--muted); }
+    .nav-link { text-decoration:none; display:flex; align-items:center; gap:12px; background:#e1e7da; border:1px solid #d7dfcf; border-radius:8px; padding:11px 13px; font-weight:600; }
+    .nav-link span:last-child { margin-left:auto; font-size:11px; background:#f9faf6; border-radius:5px; padding:1px 7px; }
+    .sidebar-bottom { margin-top:auto; }
+    .project-progress { margin-bottom:25px; padding:0 8px; }
+    .progress-label { display:flex; justify-content:space-between; margin-bottom:9px; font-size:12px; }
+    progress { display:block; height:5px; width:100%; appearance:none; border:0; border-radius:10px; background:#dce1d5; accent-color:var(--green); }
+    progress::-webkit-progress-bar { background:#dce1d5; border-radius:10px; }
+    progress::-webkit-progress-value { background:var(--green); border-radius:10px; }
+    progress::-moz-progress-bar { background:var(--green); border-radius:10px; }
+    .local-note { border-top:1px solid #d9dfd0; padding:20px 8px 0; color:var(--muted); font-size:12px; }
+    .local-note strong { color:#53614e; display:block; margin-bottom:5px; font-weight:550; }
+    main { min-width:0; padding:0 40px 30px; }
+    .topbar { height:85px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
+    .breadcrumb { display:flex; align-items:center; gap:10px; }
+    .breadcrumb b { color:var(--ink); font-weight:500; }
+    #save-state { display:flex; gap:7px; align-items:center; text-align:right; font-size:11px; }
+    #save-state::before { content:""; flex:0 0 6px; height:6px; border-radius:50%; background:#719177; }
+    #save-state.warning { color:#9b6020; }
+    #save-state.warning::before { background:#c7852e; }
+    .page-header { display:flex; justify-content:space-between; align-items:center; gap:24px; padding:38px 0 28px; }
+    .page-header .eyebrow { margin-bottom:8px; color:var(--green); }
+    h1 { font-size:32px; line-height:1.2; letter-spacing:-1.2px; font-weight:600; margin:0 0 10px; }
+    .subtitle { margin:0; color:var(--muted); font-size:13px; }
+    .header-actions { display:flex; gap:10px; flex-shrink:0; }
+    .button { border:1px solid #d7dcd1; padding:10px 15px; border-radius:8px; background:white; font-size:12px; font-weight:550; display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap; }
+    .button:hover { background:#edf1e9; }
+    .button.primary { background:var(--green); color:white; border-color:var(--green); }
+    .button.primary:hover { background:#254c34; }
+    .button .symbol { font-size:18px; line-height:16px; }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:11px; background:#fff; margin-bottom:31px; padding:20px 0; }
+    .stat { padding:0 24px; border-right:1px solid var(--line); }
+    .stat:last-child { border:0; }
+    .stat-label { font-size:11px; color:var(--muted); display:flex; align-items:center; gap:7px; }
+    .stat-value { display:block; margin-top:5px; font-size:27px; line-height:1.2; font-weight:550; letter-spacing:-.8px; font-variant-numeric:tabular-nums; }
+    .stat-value small { font-size:12px; color:var(--muted); margin-left:5px; font-weight:400; letter-spacing:0; }
+    .toolbar { display:flex; gap:12px; align-items:center; margin-bottom:22px; }
+    .search-wrap { position:relative; width:310px; }
+    .search-wrap svg { position:absolute; top:12px; left:12px; width:16px; height:16px; color:var(--muted); pointer-events:none; }
+    input,textarea,select { width:100%; border:1px solid #dce0d6; border-radius:7px; padding:10px 12px; background:#fff; color:var(--ink); }
+    input::placeholder,textarea::placeholder { color:#8c9088; }
+    #search { padding-left:36px; font-size:12px; height:40px; }
+    #priority-filter { width:175px; font-size:12px; height:40px; }
+    .toolbar-hint { margin-left:auto; color:var(--muted); font-size:11px; }
+    .board { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; align-items:stretch; }
+    .column { background:#eff1eb; border:1px solid #e6e9e0; border-radius:11px; min-height:370px; padding:15px 12px 12px; transition:background .15s; }
+    .column[data-column="progress"] { background:#f3f1e9; border-color:#ebe7da; }
+    .column[data-column="done"] { background:#edf2ea; border-color:#e1e9db; }
+    .column.drag-over { background:#dce8d6; outline:2px dashed #77966c; outline-offset:-3px; }
+    .column-header { display:flex; align-items:center; gap:9px; padding:0 3px 15px; }
+    .column h2 { margin:0; font-size:12px; font-weight:600; }
+    .dot { width:7px; height:7px; background:#8e948a; border-radius:50%; flex-shrink:0; }
+    .dot.progress { background:#c19b45; }
+    .dot.done { background:#698d5d; }
+    .column-count { color:#6d7567; padding:1px 6px; background:#fff9; border-radius:5px; font-size:10px; }
+    .column-add { margin-left:auto; width:24px; height:24px; background:transparent; border:0; border-radius:5px; color:#727b68; font-size:20px; line-height:20px; }
+    .column-add:hover { background:#dde3d5; }
+    .cards { display:flex; flex-direction:column; gap:10px; }
+    .task-card { border:1px solid #e0e4d9; border-radius:8px; background:#fff; padding:16px; box-shadow:0 2px 3px #273e1e03; overflow-wrap:anywhere; }
+    .task-card:hover { box-shadow:0 4px 12px #273e1e09; border-color:#c8d2bd; }
+    .task-card.dragging { opacity:.45; }
+    .card-top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px; }
+    .task-id { font:10px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace; color:#868d7e; letter-spacing:.3px; }
+    .priority { border-radius:4px; padding:2px 7px; font-size:10px; font-weight:500; background:#f1f3ee; color:#727b66; }
+    .priority.high { background:#fbede5; color:#ad683b; }
+    .priority.medium { background:#f7f2df; color:#9c8133; }
+    .card-title { padding:0; border:0; background:none; text-align:left; font-weight:600; font-size:14px; line-height:1.45; width:100%; overflow-wrap:anywhere; }
+    .card-title:hover { color:var(--green); text-decoration:underline; text-underline-offset:3px; }
+    .card-description { margin:8px 0 16px; color:#858b7e; font-size:12px; line-height:1.65; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; white-space:pre-line; }
+    .card-footer { border-top:1px solid #f0f1ec; padding-top:12px; display:flex; align-items:center; gap:6px; font-size:10px; color:#828a79; }
+    .avatar { display:grid; place-items:center; background:#edf0e7; color:#68735a; border-radius:50%; width:23px; height:23px; flex-shrink:0; font-size:9px; font-weight:600; }
+    .owner-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:90px; }
+    .card-status { margin-left:auto; width:auto; max-width:125px; padding:4px 5px; font-size:10px; border:1px solid #e8ebe1; background:#fafbf8; border-radius:5px; }
+    .empty { padding:44px 15px; text-align:center; color:#8b9382; font-size:12px; }
+    .empty-icon { font-size:24px; font-weight:300; color:#a8b19f; margin-bottom:10px; }
+    .empty strong { display:block; color:#75806a; margin-bottom:5px; font-weight:500; }
+    .board-footer { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; color:#8b9184; font-size:11px; margin:22px 2px 0; }
+    .board-footer p { margin:0; }
+    .board-footer details { max-width:430px; text-align:right; }
+    .board-footer summary { cursor:pointer; color:#69775e; }
+    .board-footer details p { margin-top:8px; }
+    dialog { width:min(540px,calc(100vw - 32px)); max-height:calc(100dvh - 40px); padding:28px; border:1px solid var(--line); border-radius:16px; box-shadow:0 24px 90px #20301730; color:var(--ink); }
+    dialog::backdrop { background:#28332465; backdrop-filter:blur(3px); }
+    .dialog-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+    .dialog-heading h2 { margin:0; font-size:23px; letter-spacing:-.6px; font-weight:600; }
+    .close-dialog { background:transparent; border:0; font-size:24px; width:32px; height:32px; border-radius:6px; }
+    .close-dialog:hover { background:var(--paper); }
+    .dialog-subtitle { margin:0 0 24px; color:var(--muted); font-size:12px; }
+    label { display:block; font-size:12px; font-weight:550; margin-bottom:7px; }
+    .form-field { margin-bottom:17px; }
+    textarea { resize:vertical; min-height:104px; line-height:1.5; }
+    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:15px; }
+    .dialog-actions { display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--line); padding-top:20px; }
+    #form-error { color:#a24e2e; font-size:12px; }
+    #form-error:empty { display:none; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media(min-width:1600px) { main { padding-left:60px; padding-right:60px; } .column { min-height:490px; } }
+    @media(max-width:1150px) { .layout { grid-template-columns:185px minmax(0,1fr); } main { padding:0 24px 24px; } .sidebar { padding:28px 14px 20px; } .page-header { align-items:flex-start; flex-direction:column; gap:20px; } .toolbar-hint { display:none; } .task-card { padding:12px; } .owner-name { max-width:65px; } .card-footer { flex-wrap:wrap; } }
+    @media(max-width:780px) { .layout { display:block; } .sidebar { padding:16px 20px; border-right:0; border-bottom:1px solid var(--line); flex-direction:row; justify-content:space-between; align-items:center; gap:12px; } .brand { padding:0; } .project,.sidebar-bottom { display:none; } .nav-link { padding:7px 12px; font-size:12px; } main { padding:0 18px 28px; } .topbar { height:60px; } .breadcrumb>span:first-child,.breadcrumb>span:nth-child(2) { display:none; } h1 { font-size:28px; } .page-header { padding:28px 0 24px; } .board { grid-template-columns:1fr; } .column { min-height:210px; } .stat { padding:0 12px; } .stat-label { font-size:10px; } .stat-value { font-size:24px; } .stats { padding:16px 0; margin-bottom:22px; } .stat-value small { display:none; } .search-wrap { flex:1; min-width:0; } #priority-filter { width:145px; } .owner-name { max-width:none; } .board-footer { flex-direction:column; gap:8px; } .board-footer details { text-align:left; } #save-state { max-width:155px; } }
+    @media(prefers-reduced-motion:reduce) { * { transition:none !important; } }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" aria-label="Proyecto">
+    <div class="brand"><span class="brand-icon" aria-hidden="true">⌑</span> room designer<span style="color:#879477">.</span></div>
+    <div class="project"><p class="eyebrow">Espacio de trabajo</p><p class="project-name">Room Designer</p><p class="project-caption">Construyendo, paso a paso.</p></div>
+    <nav><a class="nav-link" href="#board" aria-current="page"><span aria-hidden="true">▥</span> Tablero <span id="nav-count">0</span></a></nav>
+    <div class="sidebar-bottom">
+      <div class="project-progress"><div class="progress-label"><span>Trabajo completado</span><strong id="side-percent">0%</strong></div><progress id="project-progress" max="100" value="0" aria-label="Porcentaje de tareas hechas"></progress></div>
+      <div class="local-note"><strong>◎ Tu tablero, siempre a mano</strong>Un solo archivo. Sin cuentas.<br>Listo para trabajar sin conexión.</div>
+    </div>
+  </aside>
+  <main>
+    <div class="topbar"><div class="breadcrumb"><span>Proyectos</span><span>/</span><span>Room Designer</span><span>/</span><b>Tablero</b></div><span id="save-state" role="status">Archivo del proyecto</span></div>
+    <header class="page-header">
+      <div><p class="eyebrow">Del plan a la realidad</p><h1>Tablero del proyecto</h1><p class="subtitle">Qué queda, qué está en marcha y todo lo que ya hemos hecho.</p></div>
+      <div class="header-actions"><button class="button" id="download-board"><span class="symbol" aria-hidden="true">↓</span> Descargar HTML</button><button class="button primary" id="new-task"><span class="symbol" aria-hidden="true">+</span> Nueva tarea</button></div>
+    </header>
+    <section class="stats" aria-label="Resumen del proyecto">
+      <div class="stat"><span class="stat-label">Total de tareas</span><span class="stat-value" id="total-count">0</span></div>
+      <div class="stat"><span class="stat-label"><span class="dot progress"></span> En progreso</span><span class="stat-value" id="progress-count">0</span></div>
+      <div class="stat"><span class="stat-label"><span class="dot done"></span> Hechas</span><span class="stat-value" id="done-count">0</span></div>
+      <div class="stat"><span class="stat-label">Completado</span><span class="stat-value"><span id="completion">0%</span><small>del total</small></span></div>
+    </section>
+    <div class="toolbar">
+      <div class="search-wrap"><label class="sr-only" for="search">Buscar tareas</label><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input type="search" id="search" placeholder="Buscar por tarea, persona o ID…" autocomplete="off"></div>
+      <label class="sr-only" for="priority-filter">Filtrar por prioridad</label><select id="priority-filter"><option value="all">Todas las prioridades</option><option value="high">Prioridad alta</option><option value="medium">Prioridad media</option><option value="low">Prioridad baja</option></select>
+      <span class="toolbar-hint">Arrastra para mover · Pulsa el título para editar</span>
+    </div>
+    <div class="board" id="board" aria-label="Tareas por estado">
+      <section class="column" data-column="todo" aria-labelledby="todo-heading"><div class="column-header"><span class="dot"></span><h2 id="todo-heading">Por hacer</h2><span class="column-count">0</span><button class="column-add" aria-label="Añadir tarea pendiente">+</button></div><div class="cards"></div></section>
+      <section class="column" data-column="progress" aria-labelledby="progress-heading"><div class="column-header"><span class="dot progress"></span><h2 id="progress-heading">En progreso</h2><span class="column-count">0</span><button class="column-add" aria-label="Añadir tarea en progreso">+</button></div><div class="cards"></div></section>
+      <section class="column" data-column="done" aria-labelledby="done-heading"><div class="column-header"><span class="dot done"></span><h2 id="done-heading">Hecho</h2><span class="column-count">0</span><button class="column-add" aria-label="Añadir tarea hecha">+</button></div><div class="cards"></div></section>
+    </div>
+    <footer class="board-footer"><p id="visible-count" aria-live="polite"></p><details><summary>Cómo se guardan los cambios</summary><p>Se conservan en este navegador. «Descargar HTML» crea una copia con todas las tareas: reemplaza el archivo del proyecto con ella para compartir tus cambios con los agentes. El navegador no modifica el archivo original. Al abrirlo se conserva la revisión más reciente de cada tarea.</p></details></footer>
+  </main>
+</div>
+<dialog id="task-dialog" aria-labelledby="dialog-title">
+  <form id="task-form">
+    <div class="dialog-heading"><h2 id="dialog-title">Nueva tarea</h2><button type="button" class="close-dialog" id="close-dialog" aria-label="Cerrar">×</button></div>
+    <p class="dialog-subtitle">Un siguiente paso claro hace avanzar el proyecto.</p>
+    <input type="hidden" id="task-id">
+    <div class="form-field"><label for="task-title">Título <span aria-hidden="true">*</span></label><input id="task-title" required maxlength="180" placeholder="¿Qué hay que hacer?" autofocus></div>
+    <div class="form-field"><label for="task-description">Descripción y seguimiento</label><textarea id="task-description" maxlength="10000" placeholder="Objetivo, avances, bloqueos o comprobaciones realizadas…"></textarea></div>
+    <div class="form-field"><label for="task-owner">Responsable</label><input id="task-owner" maxlength="80" placeholder="Nombre de la persona o agente"></div>
+    <div class="form-row">
+      <div class="form-field"><label for="task-status">Estado</label><select id="task-status"><option value="todo">Por hacer</option><option value="progress">En progreso</option><option value="done">Hecho</option></select></div>
+      <div class="form-field"><label for="task-priority">Prioridad</label><select id="task-priority"><option value="low">Baja</option><option value="medium" selected>Media</option><option value="high">Alta</option></select></div>
+    </div>
+    <p id="form-error" role="alert"></p>
+    <div class="dialog-actions"><button type="button" class="button" id="cancel-task">Cancelar</button><button type="submit" class="button primary">Guardar tarea</button></div>
+  </form>
+</dialog>
+<template id="task-card-template">
+  <article class="task-card" draggable="true">
+    <div class="card-top"><span class="task-id"></span><span class="priority"></span></div>
+    <button type="button" class="card-title"></button><p class="card-description"></p>
+    <div class="card-footer"><span class="avatar" aria-hidden="true"></span><span class="owner-name"></span><select class="card-status"><option value="todo">Por hacer</option><option value="progress">En progreso</option><option value="done">Hecho</option></select></div>
+  </article>
+</template>
+<noscript>Activa JavaScript en el navegador para gestionar las tareas de este archivo.</noscript>
+<script id="tracker-data" type="application/json">
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "RD-001",
+      "title": "Crear el tablero de seguimiento",
+      "description": "HTML autónomo con tareas pendientes, en progreso y hechas. Crear y editar tareas, conservar los cambios y descargar una copia portátil. Validar con escenarios Gherkin y pruebas.",
+      "owner": "Codex",
+      "status": "progress",
+      "priority": "high",
+      "updatedAt": "2026-09-12T16:17:00.000Z"
+    },
+    {
+      "id": "RD-002",
+      "title": "Registrar la disciplina del tablero para los agentes",
+      "description": "Añadir en AGENTS.md y CLAUDE.md que cada trabajo debe registrarse en tablero.html antes de comenzar y actualizarse durante su ejecución y al terminar.",
+      "owner": "Codex",
+      "status": "progress",
+      "priority": "high",
+      "updatedAt": "2026-09-12T16:17:00.000Z"
+    },
+    {
+      "title": "Importar una habitación editable desde foto o vídeo, con muebles existentes",
+      "description": "Objetivo: crear un plano editable de una habitación a partir de una foto o un vídeo corto, aunque esté amueblada. Permitir trabajar con la habitación vacía o conservar, mover y eliminar los muebles propios, sin exigir que pertenezcan al catálogo.\n\nAlcance inicial:\n• Foto única: generar un borrador de paredes, aperturas y muebles; permitir corregir geometría y medidas.\n• Vídeo guiado: aprovechar movimiento y vistas solapadas para reconstrucción; anclar la escala con una longitud conocida o datos de sensores. Una segunda medida sirve para comprobar deformaciones.\n• Muebles: empezar con cajas orientadas o modelos genéricos; añadir mallas y texturas propias después.\n• Distinguir elementos observados, inferidos y confirmados. No presentar geometría oculta ni escala estimada como medidas verificadas.\n\nReferencia de producto: IKEA Kreativ sí documenta subir una foto existente mediante «Use a Photo». Es distinto del escaneo panorámico con movimientos y del Full Room Scan con LiDAR. No conocemos su algoritmo interno ni la precisión del modo foto.\n\nEvaluación técnica: DA3 Base/Small y extracción estructural para RGB; RoomPlan como vía opcional LiDAR. Estudiar RoomFormer, SceneScript/SpatialLM y SAM 3D como antecedentes; comprobar licencias de código, pesos y dependencias antes de elegir.\n\nCriterios de aceptación del prototipo:\n1. Obtener un plano corregible e importarlo como proyecto editable.\n2. Calibrar dimensiones y señalar partes inferidas.\n3. Conservar muebles personales sin catálogo; mover, girar, ocultar/eliminar, guardar/restaurar y deshacer.\n4. Soportar el contrato de importación, persistencia de recursos propios y habitaciones no rectangulares en el asistente.\n5. Comparar error geométrico y tiempo total de corrección frente al dibujo manual sobre habitaciones reales.\n\nInvestigación completada; implementación pendiente. Informe con 38 referencias: docs/RESEARCH-habitacion-foto-video.md\nIKEA foto: https://www.ikea.com/au/en/customer-service/knowledge/articles/72d1c246-7e5e-4363-be6f-26995391bffe.html",
+      "owner": "",
+      "status": "todo",
+      "priority": "medium",
+      "id": "RD-003",
+      "updatedAt": "2026-09-12T14:19:03.485Z"
+    },
+    {
+      "id": "RD-004",
+      "title": "Crear habitaciones desde un plano manipulable al inicio",
+      "description": "Completado: creación inicial de la habitación, sin añadir un modo de edición posterior. Arrastre de paredes y esquinas en planta, medidas y superficie en vivo, menú visible de longitud exacta y deshacer/rehacer. Plantillas rectangular, L, U, T y diagonal; puertas y ventanas con ancho dinámico antes de confirmar la escena 3D. Verificado en navegador: contornos inclinados y en U, puerta de 0,9 a 2 m, ida y vuelta entre pasos y creación 3D. Validación: 144 tests Python y 284 frontend/integración; typecheck, lint y build correctos; cobertura de líneas 97,07 % y mutación 83,24 % (mínimo 75 %). Tras el cierre accidental se recuperó el servidor local y se repitieron las validaciones interrumpidas. Los muebles mantienen coordenadas x/z y altura y. Limitación identificada y no ampliada en esta tarea: el asistente remoto sigue aceptando solo habitaciones rectangulares alineadas en el origen.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "high",
+      "updatedAt": "2026-09-12T14:41:16.000Z"
+    },
+    {
+      "id": "RD-005",
+      "title": "Configurar el proyecto personal de Google Cloud",
+      "description": "Preparar Google Cloud personal con facturación, presupuesto, identidades y recursos aislados por entorno. Resultado inicial: proyecto dev room-designer-508414, límite de Cloud Run de 100 EUR y alerta global de 100 EUR. Actualización: también creados y verificados room-designer-stage y room-designer-prod. Alerta global ampliada y guardada para los tres proyectos, todos los servicios (incluido Cloud Build), 100 EUR mensuales conjuntos y los 20 umbrales 5, 10, …, 100 %. Rectificación: el supuesto máximo de 17 umbrales no era correcto. El límite automático de Cloud Run sigue solo en dev; pendiente ampliar su cobertura sin triplicar el presupuesto. Infraestructura reproducible y tests simulados preparados con RD-006. Pendientes bootstrap/IAM reales, despliegue inicial y pruebas efectivas de los recursos. El catálogo cloud permanece bloqueado hasta completar adaptadores y orquestación; Airflow evoluciona en RD-008.",
+      "owner": "Codex",
+      "status": "progress",
+      "priority": "high",
+      "updatedAt": "2026-09-12T15:42:15Z"
+    },
+    {
+      "id": "RD-006",
+      "title": "Desplegar entornos desde ramas con CI/CD y pruebas",
+      "description": "Preparar entrega por ramas dev/stage/prod con CI obligatoria, Cloud Build en cada proyecto, pruebas de contenedor y despliegue exclusivo del digest validado tras SUCCESS. Implementados workflow, cloudbuild.yaml, guardas de fallo/aislamiento/borrado, identidades build/deploy separadas por WIF, estados por proyecto, editor privado y smoke de GCS/Firestore/PubSub con datos efímeros. Ramas y GitHub Environments creados y protegidos con PR y Puerta de calidad. TDD: observados fallos antes de implementar; 26 tests propios de entrega y 7 planes simulados de infraestructura en verde. Última suite global: 177 Python y 284 frontend, typecheck y lint correctos; actionlint y build web correctos. Construidos y probados localmente contenedores web y CLI; no se afirma una prueba real de Cloud Build. Documentación de activación y limitaciones en docs/CI-CD.md. Pendientes publicar la revisión, aplicar bootstrap/WIF y comprobar la primera entrega en GCP. Catálogo/IA y Airflow no desplegados por este flujo todavía; preservar e integrar RD-008. Presupuesto conjunto de 100 EUR, sin duplicarlo por entorno. Activación solicitada explícitamente: publicar una revisión aislada de cambios ajenos, aplicar bootstrap por proyecto, configurar WIF y verificar la primera ejecución real antes de declarar activo cada entorno. Activación real: PR #2 integrado con CI verde; bootstrap de 37 altas sin borrados aplicado en cada proyecto y WIF registrado en los tres Environments. Primer Cloud Build dev 147d8973-f6d8-4ae7-90b6-8225f475e270 SUCCESS, imagen e infraestructura desplegadas. Run 34705731374 falló en el smoke privado al pedir ID token mediante impersonación del CLI. Se mantiene stage sin promover (PR #3). Corrección TDD: escenario y test de aceptación observados en rojo, unitario en rojo; generación directa de ID token con audiencia y correo, usando permiso OIDC existente. 28 tests de entrega verdes y refactor del helper de aceptación; pendiente CI/entrega de la corrección antes de promover.",
+      "owner": "Codex",
+      "status": "progress",
+      "priority": "high",
+      "updatedAt": "2026-09-12T16:53:26.672Z"
+    },
+    {
+      "id": "RD-007",
+      "title": "Aclarar si el pipeline requiere una cuenta de Airflow",
+      "description": "Investigación resuelta: no hace falta registrarse en Apache Airflow. Una instalación propia tiene usuarios locales para su panel. El repositorio conserva deploy/airflow/catalog_refresh_dag.py; la vía GCP de infra/gcp/pipeline.tf define Cloud Scheduler, Cloud Run y Pub/Sub, con runtime condicionado a enable_catalog_runtime y adaptadores cloud pendientes. Fuente oficial: https://airflow.apache.org/docs/apache-airflow/stable/start.html. Sin cambios de comportamiento. Validación global pendiente: primer intento con 158 tests Python correctos y 280 frontend correctos, integración bloqueada por sandbox; al repetir con permiso para servidor local aparecen 9 fallos en tests de despliegue modificados concurrentemente (166 tests recogidos). Se conserva progress hasta que las puertas globales estén verdes; los fallos no pertenecen a esta consulta. Aclaración solicitada: ejecutar el DAG Python existente sí requiere una instancia de Airflow y sus workers configurados; no una cuenta en un servicio externo. Cloud Scheduler solo dispara la ingesta y Pub/Sub conecta ingesta con generación en el diseño GCP. Esa infraestructura no reproduce la coordinación completa del DAG: publicación por catálogo, espera conjunta, sincronización de embeddings, verificación y evaluación. No debe presentarse como sustitución equivalente ya implementada.",
+      "owner": "Codex",
+      "status": "progress",
+      "priority": "low",
+      "updatedAt": "2026-09-12T15:17:46.681Z"
+    },
+    {
+      "id": "RD-008",
+      "title": "Poner en marcha Airflow para orquestar el catálogo",
+      "description": "Autorizado: preparar y desplegar Airflow, ejecutar el DAG con dependencias completas, persistencia, secretos, acceso al panel, recuperación y avisos. Evaluar alojamiento dentro del presupuesto conjunto de 100 EUR/mes. Integrar con la entrega existente sin duplicar disparos. Primero escenarios Gherkin y pruebas en rojo; verificar ejecución controlada con proveedores fake y registrar cualquier requisito externo pendiente. Conservar el trabajo concurrente de CI/CD y del editor.",
+      "owner": "Codex",
+      "status": "progress",
+      "priority": "high",
+      "updatedAt": "2026-09-12T15:24:33.359Z"
+    }
+  ]
+}
+</script>
+<script id="tracker-core">
+const TRACKER_STORAGE_KEY = 'room-designer-tracker-v1';
+class TaskTracker {
+  constructor(initial, storage) {
+    this.storage = storage;
+    this.storageError = false;
+    let local = { version: 1, tasks: [] };
+    try {
+      const saved = JSON.parse(storage.getItem(TRACKER_STORAGE_KEY) || '{"version":1,"tasks":[]}');
+      if (saved.version !== 1 || !Array.isArray(saved.tasks)) throw new Error('Formato no compatible');
+      saved.tasks.forEach(task => this.validate(task));
+      local = saved;
+    } catch {
+      this.storageError = true;
+    }
+    const records = new Map(initial.tasks.map(task => [task.id, task]));
+    for (const task of local.tasks) {
+      const existing = records.get(task.id);
+      if (!existing || Date.parse(task.updatedAt) > Date.parse(existing.updatedAt)) records.set(task.id, task);
+    }
+    this.tasks = [...records.values()];
+  }
+
+  save(task) {
+    this.validate(task);
+    const index = this.tasks.findIndex(existing => existing.id === task.id);
+    if (index < 0) this.tasks.push({ ...task });
+    else this.tasks[index] = { ...task };
+    try {
+      this.storage.setItem(TRACKER_STORAGE_KEY, JSON.stringify(this.snapshot()));
+      this.storageError = false;
+    } catch {
+      this.storageError = true;
+    }
+  }
+
+  validate(task) {
+    if (!task || ['id', 'title', 'description', 'owner', 'updatedAt'].some(key => typeof task[key] !== 'string')
+      || !task.id.trim() || !task.title.trim() || !Number.isFinite(Date.parse(task.updatedAt))
+      || !['todo', 'progress', 'done'].includes(task.status) || !['high', 'medium', 'low'].includes(task.priority)) {
+      throw new Error('Revisa el título, el estado y los datos de la tarea.');
+    }
+  }
+
+  snapshot() {
+    return { version: 1, tasks: this.tasks.map(task => ({ ...task })) };
+  }
+}
+</script>
+<script id="tracker-ui">
+(() => {
+  const $ = id => document.getElementById(id);
+  const tracker = new TaskTracker(JSON.parse($('tracker-data').textContent), {
+    getItem: key => window.localStorage.getItem(key),
+    setItem: (key, value) => window.localStorage.setItem(key, value),
+  });
+  const dialog = $('task-dialog');
+  const taskFields = ['id', 'title', 'description', 'owner', 'status', 'priority'];
+  const priorityNames = { high: 'Alta', medium: 'Media', low: 'Baja' };
+  const emptyMessages = { todo: ['El siguiente paso empieza aquí', 'Añade una tarea para ponerla en marcha.'], progress: ['Espacio para lo que viene', 'Mueve aquí las tareas en las que estés trabajando.'], done: ['Cada avance cuenta', 'Las tareas terminadas tendrán su lugar aquí.'] };
+  const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+  let returnFocus = null;
+
+  function openForm(task = null, status = 'todo') {
+    returnFocus = document.activeElement;
+    $('task-form').reset();
+    $('form-error').textContent = '';
+    $('dialog-title').textContent = task ? 'Editar tarea' : 'Nueva tarea';
+    const values = task || { status, priority: 'medium' };
+    for (const key of taskFields) $('task-' + key).value = values[key] || '';
+    dialog.showModal();
+    $('task-title').focus();
+  }
+
+  function closeForm() {
+    dialog.close();
+    if (returnFocus?.isConnected) returnFocus.focus();
+    else $('new-task').focus();
+  }
+
+  function moveTask(id, status) {
+    const task = tracker.tasks.find(task => task.id === id);
+    if (!task) return;
+    tracker.save({ ...task, status, updatedAt: new Date().toISOString() });
+    render();
+  }
+
+  function taskCard(task) {
+    const card = $('task-card-template').content.firstElementChild.cloneNode(true);
+    card.dataset.id = task.id;
+    card.querySelector('.task-id').textContent = task.id;
+    const priority = card.querySelector('.priority');
+    priority.textContent = priorityNames[task.priority];
+    priority.classList.add(task.priority);
+    const title = card.querySelector('.card-title');
+    title.textContent = task.title;
+    title.title = 'Editar tarea';
+    title.addEventListener('click', () => openForm(task));
+    card.querySelector('.card-description').textContent = task.description || 'Sin descripción. Pulsa el título para añadir detalles.';
+    const owner = task.owner || 'Sin asignar';
+    card.querySelector('.owner-name').textContent = owner;
+    card.querySelector('.owner-name').title = owner;
+    card.querySelector('.avatar').textContent = task.owner ? owner.split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase() : '—';
+    const status = card.querySelector('.card-status');
+    status.value = task.status;
+    status.setAttribute('aria-label', 'Estado de ' + task.title);
+    status.addEventListener('change', () => {
+      moveTask(task.id, status.value);
+      [...document.querySelectorAll('.task-card')].find(card => card.dataset.id === task.id)?.querySelector('select').focus();
+    });
+    card.addEventListener('dragstart', event => {
+      event.dataTransfer.setData('text/plain', task.id);
+      event.dataTransfer.effectAllowed = 'move';
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      document.querySelectorAll('.column').forEach(column => column.classList.remove('drag-over'));
+    });
+    return card;
+  }
+
+  function render() {
+    const query = normalize($('search').value.trim());
+    const priority = $('priority-filter').value;
+    const visible = tracker.tasks.filter(task => (priority === 'all' || task.priority === priority)
+      && normalize([task.id, task.title, task.description, task.owner].join(' ')).includes(query));
+    const counts = Object.fromEntries(['todo', 'progress', 'done'].map(status => [status, tracker.tasks.filter(task => task.status === status).length]));
+    const percent = tracker.tasks.length ? Math.round(counts.done / tracker.tasks.length * 100) : 0;
+    $('total-count').textContent = tracker.tasks.length;
+    $('nav-count').textContent = tracker.tasks.length;
+    $('progress-count').textContent = counts.progress;
+    $('done-count').textContent = counts.done;
+    $('completion').textContent = percent + '%';
+    $('side-percent').textContent = percent + '%';
+    $('project-progress').value = percent;
+    $('visible-count').textContent = `${visible.length} de ${tracker.tasks.length} tareas · El resumen incluye todo el proyecto`;
+    $('save-state').textContent = tracker.storageError ? 'Sin guardado local · Descarga el HTML' : 'Guardado local · Sin conexión';
+    $('save-state').classList.toggle('warning', tracker.storageError);
+    document.querySelectorAll('.column').forEach(column => {
+      const tasks = visible.filter(task => task.status === column.dataset.column);
+      column.querySelector('.column-count').textContent = tasks.length;
+      const cards = column.querySelector('.cards');
+      cards.replaceChildren(...tasks.map(taskCard));
+      if (!tasks.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        const icon = document.createElement('div'); icon.className = 'empty-icon'; icon.textContent = '◇'; icon.setAttribute('aria-hidden', 'true');
+        const heading = document.createElement('strong');
+        const description = document.createElement('span');
+        const message = query || priority !== 'all' ? ['Sin coincidencias', 'Prueba otra búsqueda o prioridad.'] : emptyMessages[column.dataset.column];
+        heading.textContent = message[0]; description.textContent = message[1];
+        empty.append(icon, heading, description); cards.append(empty);
+      }
+    });
+  }
+
+  $('new-task').addEventListener('click', () => openForm());
+  $('close-dialog').addEventListener('click', closeForm);
+  $('cancel-task').addEventListener('click', closeForm);
+  $('search').addEventListener('input', render);
+  $('priority-filter').addEventListener('change', render);
+  $('task-form').addEventListener('submit', event => {
+    event.preventDefault();
+    try {
+      const task = Object.fromEntries(taskFields.map(key => [key, $('task-' + key).value.trim()]));
+      task.id ||= 'RD-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      task.updatedAt = new Date().toISOString();
+      tracker.save(task);
+      render();
+      closeForm();
+    } catch (error) {
+      $('form-error').textContent = error.message;
+    }
+  });
+  document.querySelectorAll('.column').forEach(column => {
+    column.querySelector('.column-add').addEventListener('click', () => openForm(null, column.dataset.column));
+    column.addEventListener('dragover', event => { event.preventDefault(); column.classList.add('drag-over'); });
+    column.addEventListener('dragleave', event => { if (!column.contains(event.relatedTarget)) column.classList.remove('drag-over'); });
+    column.addEventListener('drop', event => {
+      event.preventDefault();
+      column.classList.remove('drag-over');
+      moveTask(event.dataTransfer.getData('text/plain'), column.dataset.column);
+    });
+  });
+  $('download-board').addEventListener('click', () => {
+    const copy = document.documentElement.cloneNode(true);
+    copy.querySelector('#tracker-data').textContent = '\n' + JSON.stringify(tracker.snapshot(), null, 2).replace(/</g, '\\u003c') + '\n';
+    copy.querySelector('#task-dialog').removeAttribute('open');
+    const url = URL.createObjectURL(new Blob(['<!doctype html>\n' + copy.outerHTML], { type: 'text/html;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = 'tablero.html';
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  render();
+})();
+</script>
+</body>
+</html>
