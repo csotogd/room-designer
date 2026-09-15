@@ -1,6 +1,5 @@
 """Composition root. Models, clients and persistence are created only at startup."""
 
-import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,6 +10,7 @@ from dotenv import load_dotenv
 
 from room_designer.adapters.adk_runtime import AdkRuntime, create_model
 from room_designer.adapters.http import MAX_WS_BYTES, create_designer_app, create_search_app
+from room_designer.adapters.reliability import RateLimiter
 from room_designer.adapters.storage import (
     FileRoomRepository,
     GcsScreenshots,
@@ -20,6 +20,7 @@ from room_designer.adapters.storage import (
 )
 from room_designer.adapters.vision import AdkJudge, AdkPicker, ConstantJudge, DeterministicPicker, ImageLoader
 from room_designer.application.design import DesignSession
+from room_designer.application.observability import configure_logging
 from room_designer.config import ModelConfig
 from room_designer.search.embeddings import create_embedder
 from room_designer.search.index import SearchIndex, SnapshotStore
@@ -51,7 +52,10 @@ def designer_app(env=None):
     judge = ConstantJudge() if judge_config.provider == "fake" else AdkJudge(create_model(judge_config))
     site = env.get("CATALOG_SITE", "sklum")
     session = DesignSession(
-        FileRoomRepository(Path(env.get("DESIGNER_ROOM_FILE", f"data/designer/room-{site}.json"))),
+        FileRoomRepository(
+            Path(env.get("DESIGNER_ROOM_FILE", f"data/designer/room-{site}.json")),
+            int(env.get("DESIGNER_BACKUP_COUNT", "3")),
+        ),
         catalog,
         HttpProductSearch(client, env.get("SEARCH_URL", "http://localhost:8787"), catalog),
         picker,
@@ -78,6 +82,7 @@ def designer_app(env=None):
         tuple(filter(None, env.get("DESIGNER_ALLOWED_ORIGINS", "").split(","))),
         lifespan,
         judge_target=float(env.get("DESIGNER_JUDGE_TARGET", "7")),
+        rate_limit=RateLimiter(int(env.get("RATE_LIMIT_PER_MINUTE", "120"))),
     )
 
 
@@ -86,7 +91,7 @@ def search_app(env=None):
     client = httpx.AsyncClient()
     embedder = create_embedder(env, client)
     directory = Path(env.get("SEARCH_DATA_DIR", "data/search-index/" + env.get("CATALOG_SITE", "sklum")))
-    service = SearchIndex(embedder, SnapshotStore(directory))
+    service = SearchIndex(embedder, SnapshotStore(directory, int(env.get("SEARCH_SNAPSHOT_BACKUP_COUNT", "3"))))
 
     @asynccontextmanager
     async def lifespan(app):
@@ -102,12 +107,17 @@ def search_app(env=None):
         yield
         await client.aclose()
 
-    return create_search_app(service, env.get("SEARCH_SYNC_TOKEN", ""), lifespan)
+    return create_search_app(
+        service,
+        env.get("SEARCH_SYNC_TOKEN", ""),
+        lifespan,
+        RateLimiter(int(env.get("RATE_LIMIT_PER_MINUTE", "120"))),
+    )
 
 
 def setup():
     load_dotenv(override=False)
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(message)s")
+    configure_logging(os.getenv("LOG_LEVEL", "INFO").upper())
 
 
 def designer_main():

@@ -231,8 +231,14 @@ class DesignSession:
             }
 
     async def chat(self, brief: str, request_id: str, source: str = "user", round: int = 0) -> Json:
+        digest = hashlib.sha256(json.dumps([brief, source, round], ensure_ascii=False).encode()).hexdigest()
         async with self.lock:
             state = await self.repository.load()
+            receipt = next((r for r in state.get("chatReceipts", []) if r["id"] == request_id), None)
+            if receipt:
+                if receipt["digest"] != digest:
+                    raise ValueError("El identificador de chat ya se usó con otro contenido")
+                return {**receipt["response"], "state": state, "duplicate": True}
             editor = RoomEditor(state, self.catalog, request_id, datetime.now(timezone.utc).isoformat())
             tools = DesignTools(editor, self.search, self.picker, brief)
             # Nothing is persisted if the model, a dependency or a deadline fails midway.
@@ -250,13 +256,16 @@ class DesignSession:
             editor.state["revision"] = uuid4().hex
             # Previous scores remain in history, but a new turn needs a new capture.
             editor.state.pop("verdict", None)
+            response = {"reply": reply, "actions": editor.actions, "rejected": tools.rejected}
+            apply_action(
+                editor.state,
+                {"kind": "recordChatReceipt", "receipt": {"id": request_id, "digest": digest, "response": response}},
+                request_id,
+                editor.at,
+                source,
+            )
             await self.repository.save(editor.state)
-            return {
-                "reply": reply,
-                "actions": editor.actions,
-                "state": editor.state,
-                "rejected": tools.rejected,
-            }
+            return {**response, "state": editor.state}
 
     async def record_verdict(
         self, verdict: Json, request_id: str, brief: str, *, revision: str | None = None, **metadata

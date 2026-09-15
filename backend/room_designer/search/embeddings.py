@@ -9,6 +9,7 @@ import httpx
 import numpy as np
 from PIL import Image
 
+from room_designer.adapters.reliability import retry_async
 from room_designer.domain.room import Json
 from room_designer.search.index import unit
 
@@ -68,13 +69,17 @@ class JinaEmbedder:
         self.client, self.key = client, key
 
     async def request(self, inputs):
-        response = await self.client.post(
-            "https://api.jina.ai/v1/embeddings",
-            headers={"Authorization": f"Bearer {self.key}"},
-            json={"model": self.version, "dimensions": self.dim, "input": inputs},
-            timeout=120,
-        )
-        response.raise_for_status()
+        async def post():
+            response = await self.client.post(
+                "https://api.jina.ai/v1/embeddings",
+                headers={"Authorization": f"Bearer {self.key}"},
+                json={"model": self.version, "dimensions": self.dim, "input": inputs},
+                timeout=120,
+            )
+            response.raise_for_status()
+            return response
+
+        response = await retry_async(post)
         rows = sorted(response.json()["data"], key=lambda r: r["index"])
         if [r["index"] for r in rows] != list(range(len(inputs))):
             raise ValueError("Respuesta de Jina incompleta")

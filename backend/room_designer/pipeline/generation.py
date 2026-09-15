@@ -10,6 +10,7 @@ from google.genai import types
 from PIL import Image
 
 from room_designer.adapters.adk_runtime import create_model, run_agent
+from room_designer.adapters.reliability import retry_async
 from room_designer.adapters.vision import parse_json
 
 
@@ -24,16 +25,12 @@ def packshot_score(data: bytes) -> float:
 
 
 async def download(client, url, headers=None) -> bytes:
-    for attempt in range(3):
-        try:
-            response = await client.get(url, headers=headers, timeout=120, follow_redirects=True)
-            response.raise_for_status()
-            return response.content
-        except Exception:
-            if attempt == 2:
-                raise
-            await asyncio.sleep(1.5 * (attempt + 1))
-    raise RuntimeError("Descarga fallida")
+    async def get():
+        response = await client.get(url, headers=headers, timeout=120, follow_redirects=True)
+        response.raise_for_status()
+        return response.content
+
+    return await retry_async(get, base_delay=1.5, max_delay=3)
 
 
 class TripoGenerator:
@@ -43,14 +40,22 @@ class TripoGenerator:
         self.client, self.key = client, key
 
     async def call(self, path, **kwargs):
-        response = await self.client.request(
-            "POST" if kwargs else "GET",
-            "https://api.tripo3d.ai/v2/openapi" + path,
-            headers={"Authorization": f"Bearer {self.key}"},
-            timeout=60,
-            **kwargs,
-        )
-        response.raise_for_status()
+        method = "POST" if kwargs else "GET"
+
+        async def request():
+            response = await self.client.request(
+                method,
+                "https://api.tripo3d.ai/v2/openapi" + path,
+                headers={"Authorization": f"Bearer {self.key}"},
+                timeout=60,
+                **kwargs,
+            )
+            response.raise_for_status()
+            return response
+
+        # Reintentar el sondeo es seguro; reintentar un POST sin clave de
+        # idempotencia del proveedor podría crear dos tareas de pago.
+        response = await retry_async(request) if method == "GET" else await request()
         data = response.json()
         if data.get("code") != 0:
             raise ValueError("Tripo: " + data.get("message", "error"))

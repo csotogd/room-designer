@@ -140,7 +140,11 @@ def dependents(state: Json, uid: str) -> list[Json]:
 
 def apply_action(state: Json, action: Json, request_id: str, at: str, source: str = "assistant") -> None:
     kind = action["kind"]
-    if kind == "syncScene":
+    if kind == "recordChatReceipt":
+        receipt = deepcopy(action["receipt"])
+        receipts = [r for r in state.get("chatReceipts", []) if r["id"] != receipt["id"]]
+        state["chatReceipts"] = (receipts + [receipt])[-100:]
+    elif kind == "syncScene":
         state.update(deepcopy(action["scene"]))
     elif kind == "setRoom":
         state["room"], state["openings"] = deepcopy(action["room"]), deepcopy(action["openings"])

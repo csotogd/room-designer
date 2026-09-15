@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from room_designer.adapters.storage import atomic_write, write_json
+from room_designer.adapters.storage import atomic_write, backup_path, rotate_backup, write_json
 from room_designer.domain.room import Json, finite
 
 
@@ -31,14 +31,11 @@ def unit(vector) -> np.ndarray:
 class SnapshotStore:
     """Reads the original Node JSON + little-endian float32 format."""
 
-    def __init__(self, directory: Path):
-        self.directory = directory
+    def __init__(self, directory: Path, backup_count: int = 3):
+        self.directory, self.backup_count = directory, backup_count
 
-    def load(self):
-        try:
-            meta = json.loads((self.directory / "index.json").read_text())
-        except FileNotFoundError:
-            return None
+    def _load(self, metadata_path: Path):
+        meta = json.loads(metadata_path.read_text())
         path = (self.directory / meta["vectorsFile"]).resolve()
         if not path.is_relative_to(self.directory.resolve()):
             raise ValueError("Ruta de vectores inválida")
@@ -47,9 +44,21 @@ class SnapshotStore:
             raise ValueError("Snapshot de búsqueda corrupto")
         return meta, vectors.reshape((-1, meta["dim"]))
 
+    def load(self):
+        paths = [self.directory / "index.json"] + [
+            backup_path(self.directory / "index.json", index) for index in range(self.backup_count)
+        ]
+        for path in paths:
+            try:
+                return self._load(path)
+            except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError, TypeError, ValueError):
+                continue
+        return None
+
     def save(self, version: str, dim: int, ids: list[str], hashes: dict, vectors: np.ndarray):
         name = f"vectors-{uuid4().hex}.f32"
         atomic_write(self.directory / name, vectors.astype("<f4").tobytes())
+        rotate_backup(self.directory / "index.json", self.backup_count)
         write_json(
             self.directory / "index.json",
             {
@@ -59,7 +68,6 @@ class SnapshotStore:
                 "records": [{"id": i, "contentHash": hashes[i]} for i in ids],
             },
         )
-
 
 class SearchIndex:
     def __init__(self, embedder: Embedder, store: SnapshotStore | None = None):

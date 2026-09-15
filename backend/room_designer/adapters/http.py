@@ -3,7 +3,6 @@
 import hmac
 import json
 import logging
-import re
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -13,7 +12,13 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from room_designer.adapters.reliability import RateLimiter
 from room_designer.adapters.vision import decode_png
+from room_designer.application.observability import (
+    observation_context,
+    request_id_from_headers,
+    trace_id_from_headers,
+)
 from room_designer.application.workflow import DesignWorkflow
 
 log = logging.getLogger(__name__)
@@ -60,42 +65,72 @@ class Metrics:
         }
 
 
-def base_app(lifespan=None):
+def base_app(lifespan=None, rate_limit: RateLimiter | None = None):
     app = FastAPI(lifespan=lifespan)
     metrics = Metrics()
+    limiter = rate_limit or RateLimiter()
+    app.state.rate_limiter = limiter
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type", "Authorization", "X-Request-Id"],
+        allow_headers=["Content-Type", "Authorization", "X-Request-Id", "X-Trace-Id", "Traceparent"],
+        expose_headers=["X-Request-Id", "X-Trace-Id", "Retry-After"],
     )
 
     @app.middleware("http")
     async def observe(request: Request, call_next):
-        request_id = re.sub(r"[^\w.-]", "", request.headers.get("x-request-id", ""))[:64] or uuid4().hex
+        request_id = request_id_from_headers(request.headers)
+        trace_id = trace_id_from_headers(request.headers)
         request.state.request_id = request_id
+        request.state.trace_id = trace_id
         started = time.monotonic()
-        try:
-            response = await call_next(request)
-        except Exception:
-            log.exception("Petición fallida requestId=%s", request_id)
-            response = JSONResponse({"error": "Error interno", "requestId": request_id}, status_code=500)
-        elapsed = (time.monotonic() - started) * 1000
-        route = request.scope.get("route")
-        route_name = f"{request.method} {route.path if route else 'unknown'}"
-        metrics.observe(route_name, response.status_code, elapsed)
-        log.info(
-            json.dumps(
-                {
-                    "requestId": request_id,
-                    "route": route_name,
-                    "status": response.status_code,
-                    "durationMs": round(elapsed, 2),
-                }
+        with observation_context(request_id, trace_id):
+            limited_for = None
+            if request.url.path not in {"/healthz", "/metrics"}:
+                client_key = request.client.host if request.client else "unknown"
+                limited_for = limiter.retry_after(client_key)
+            if limited_for is not None:
+                response = JSONResponse(
+                    {"error": "Límite de peticiones alcanzado", "requestId": request_id},
+                    status_code=429,
+                    headers={"Retry-After": str(limited_for)},
+                )
+            else:
+                try:
+                    response = await call_next(request)
+                except Exception:
+                    log.exception(
+                        "Petición fallida",
+                        extra={
+                            "structured": {
+                                "event": "http.request.failed",
+                                "requestId": request_id,
+                                "traceId": trace_id,
+                            }
+                        },
+                    )
+                    response = JSONResponse({"error": "Error interno", "requestId": request_id}, status_code=500)
+            elapsed = (time.monotonic() - started) * 1000
+            route = request.scope.get("route")
+            route_name = f"{request.method} {route.path if route else 'unknown'}"
+            metrics.observe(route_name, response.status_code, elapsed)
+            log.info(
+                "Petición completada",
+                extra={
+                    "structured": {
+                        "event": "http.request.rate_limited" if limited_for is not None else "http.request.completed",
+                        "requestId": request_id,
+                        "traceId": trace_id,
+                        "route": route_name,
+                        "status": response.status_code,
+                        "durationMs": round(elapsed, 2),
+                    }
+                },
             )
-        )
-        response.headers["x-request-id"] = request_id
-        return response
+            response.headers["x-request-id"] = request_id
+            response.headers["x-trace-id"] = trace_id
+            return response
 
     @app.get("/metrics")
     async def get_metrics():
@@ -108,8 +143,8 @@ def authorized(actual, expected):
     return not expected or hmac.compare_digest(actual or "", expected)
 
 
-def create_search_app(service, token="", lifespan=None):
-    app, metrics = base_app(lifespan)
+def create_search_app(service, token="", lifespan=None, rate_limit: RateLimiter | None = None):
+    app, metrics = base_app(lifespan, rate_limit)
     app.state.index = service
     app.state.restored = False
 
@@ -187,8 +222,9 @@ def create_designer_app(
     allowed_origins=(),
     lifespan=None,
     judge_target: float = 7.0,
+    rate_limit: RateLimiter | None = None,
 ):
-    app, metrics = base_app(lifespan)
+    app, metrics = base_app(lifespan, rate_limit)
     clients: set[WebSocket] = set()
     workflow = DesignWorkflow(session, judge, screenshots, judge_target)
 
@@ -232,6 +268,20 @@ def create_designer_app(
             return
         clients.add(socket)
         owner = uuid4().hex
+        client_key = socket.client.host if socket.client else "unknown"
+        trace_id = trace_id_from_headers(socket.headers)
+        connection_request_id = request_id_from_headers(socket.headers)
+        with observation_context(connection_request_id, trace_id):
+            log.info(
+                "WebSocket conectado",
+                extra={
+                    "structured": {
+                        "event": "websocket.connected",
+                        "requestId": connection_request_id,
+                        "traceId": trace_id,
+                    }
+                },
+            )
 
         async def emit(message):
             # Observers get persisted conversation/scores as well as geometry.
@@ -239,29 +289,34 @@ def create_designer_app(
                 await broadcast_state(socket, message["state"])
             await socket.send_json(message)
 
-        try:
+        async def handle_message(raw):
+            request_id = uuid4().hex
+            started = time.monotonic()
+            operation = "invalid"
+            status = 200
             try:
-                await socket.send_json({"type": "state", "state": await session.state()})
-            except Exception:
-                await socket.send_json({"type": "error", "error": "Estado de habitación ilegible"})
-            while True:
-                raw = await socket.receive_text()
-                if len(raw.encode()) > MAX_WS_BYTES:
-                    await socket.close(1009, "Mensaje demasiado grande")
-                    return
-                request_id = uuid4().hex
-                started = time.monotonic()
-                operation = "invalid"
-                try:
-                    message = json.loads(raw)
-                    if not isinstance(message, dict):
-                        raise ValueError("El mensaje debe ser un objeto")
-                    incoming_id = message.get("requestId")
-                    if incoming_id is not None:
-                        if not isinstance(incoming_id, str) or not 1 <= len(incoming_id) <= 128:
-                            raise ValueError("requestId inválido")
-                        request_id = incoming_id
-                    operation = message.get("type")
+                message = json.loads(raw)
+                if not isinstance(message, dict):
+                    raise ValueError("El mensaje debe ser un objeto")
+                incoming_id = message.get("requestId")
+                if incoming_id is not None:
+                    if not isinstance(incoming_id, str) or not 1 <= len(incoming_id) <= 128:
+                        raise ValueError("requestId inválido")
+                    request_id = incoming_id
+                operation = message.get("type")
+                with observation_context(request_id, trace_id):
+                    if limited_for := app.state.rate_limiter.retry_after(client_key):
+                        status = 429
+                        metrics.observe(str(operation), status, (time.monotonic() - started) * 1000)
+                        await socket.send_json(
+                            {
+                                "type": "error",
+                                "requestId": request_id,
+                                "error": "Límite de peticiones alcanzado",
+                                "retryAfterSeconds": limited_for,
+                            }
+                        )
+                        return
                     if operation == "chat":
                         brief = message.get("text")
                         if not isinstance(brief, str) or not brief.strip() or len(brief) > 20000:
@@ -288,9 +343,7 @@ def create_designer_app(
                             or not isinstance(run_id, str)
                             or not isinstance(revision, str)
                         ):
-                            raise ValueError(
-                                "La captura debe incluir image, runId y revision de la respuesta"
-                            )
+                            raise ValueError("La captura debe incluir image, runId y revision de la respuesta")
                         accepted = await workflow.capture(
                             owner, run_id, revision, decode_png(image), request_id
                         )
@@ -310,18 +363,58 @@ def create_designer_app(
                     else:
                         raise ValueError("Tipo de mensaje desconocido")
                     metrics.observe(str(operation), 200, (time.monotonic() - started) * 1000)
-                except (ValueError, TypeError) as error:
+            except (ValueError, TypeError) as error:
+                status = 400
+                with observation_context(request_id, trace_id):
                     await socket.send_json({"type": "error", "requestId": request_id, "error": str(error)})
-                except Exception:
-                    log.exception("Turno fallido requestId=%s", request_id)
-                    metrics.observe(str(operation), 500, (time.monotonic() - started) * 1000)
-                    await socket.send_json(
-                        {
-                            "type": "error",
+            except Exception:
+                status = 500
+                log.exception(
+                    "Turno fallido",
+                    extra={
+                        "structured": {
+                            "event": "websocket.message.failed",
                             "requestId": request_id,
-                            "error": "No se pudo completar la operación. Revisa los logs del servidor.",
+                            "traceId": trace_id,
+                            "operation": str(operation),
                         }
+                    },
+                )
+                metrics.observe(str(operation), 500, (time.monotonic() - started) * 1000)
+                await socket.send_json(
+                    {
+                        "type": "error",
+                        "requestId": request_id,
+                        "error": "No se pudo completar la operación. Revisa los logs del servidor.",
+                    }
+                )
+            finally:
+                with observation_context(request_id, trace_id):
+                    log.info(
+                        "Operación WebSocket completada",
+                        extra={
+                            "structured": {
+                                "event": "websocket.message.completed",
+                                "requestId": request_id,
+                                "traceId": trace_id,
+                                "operation": str(operation),
+                                "status": status,
+                                "durationMs": round((time.monotonic() - started) * 1000, 2),
+                            }
+                        },
                     )
+
+        try:
+            try:
+                await socket.send_json({"type": "state", "state": await session.state()})
+            except Exception:
+                await socket.send_json({"type": "error", "error": "Estado de habitación ilegible"})
+            while True:
+                raw = await socket.receive_text()
+                if len(raw.encode()) > MAX_WS_BYTES:
+                    await socket.close(1009, "Mensaje demasiado grande")
+                    return
+                await handle_message(raw)
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:

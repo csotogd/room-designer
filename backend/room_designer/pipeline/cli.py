@@ -14,6 +14,7 @@ import httpx
 from dotenv import load_dotenv
 
 from room_designer.adapters.storage import write_json
+from room_designer.application.observability import configure_logging
 from room_designer.config import ModelConfig
 from room_designer.pipeline.catalog import (
     SITES,
@@ -254,7 +255,7 @@ async def run(args, env):
 
 def main():
     load_dotenv(override=False)
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(message)s")
+    configure_logging(os.getenv("LOG_LEVEL", "INFO").upper())
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["ingest", "generate", "judge", "link", "sync", "eval"])
     parser.add_argument("--site", choices=list(SITES), default=os.getenv("CATALOG_SITE", "sklum"))
