@@ -258,6 +258,11 @@ export class ChatPanel {
       reply.refinement ? `Agente (ronda ${reply.round}): ${reply.reply}` : reply.reply)
     this.sync.receive(reply.state)
     this.renderScores(reply.state)
+    if (!reply.evaluation) {
+      this.showStop(false)
+      this.runId = null
+      return
+    }
     if (!reply.state.room) {
       this.stop('Crea una habitación para que el juez pueda evaluarla.')
       return
@@ -275,7 +280,7 @@ export class ChatPanel {
       if (generation !== this.generation || reply.runId !== this.runId) return
       if (image.length < 100) throw new Error('No se pudo capturar la habitación.')
       this.addThinking('El juez está evaluando la habitación…')
-      this.client.judge(image, reply.evaluation)
+      this.client.judge(image, reply.evaluation!)
     } catch (error) {
       if (generation === this.generation) this.stop(`No pude preparar la imagen: ${String(error)}`)
     }

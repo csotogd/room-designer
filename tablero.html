@@ -278,6 +278,16 @@
       "status": "done",
       "priority": "medium",
       "updatedAt": "2026-09-15T23:34:00Z"
+    },
+    {
+      "id": "RD-011",
+      "title": "Centralizar la conversación y el control del chat en Python",
+      "description": "Solicitud inicial de migrar a Python aclarada: conservar TypeScript en la interfaz y centralizar decisiones en Python. Completado el contrato del servicio conversacional existente: texto libre e historial; herramienta para consejos/aclaraciones sin cambios; backend decide si requiere captura/evaluación y el frontend representa la respuesta. Pruebas de aceptación y UI observadas en rojo antes de implementar; WebSocket, idempotencia y adaptador real ADK con Gemini simulado verificados. Validación final: 236 pruebas Python, 285 frontend/integración, tipos, lint y build correctos; mutación 84,44% (mínimo 75%). Dos timeouts al ejecutar integración en paralelo con mutación desaparecieron al repetir la suite por separado. Despliegue Cloud Run, almacenamiento compartido y credenciales reales pendientes como alcance cloud separado.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "high",
+      "updatedAt": "2026-09-15T23:59:00Z",
+      "scopeUpdate": "Aclaración del usuario: conservar TypeScript para la interfaz y Python para el backend. Implementar conversación libre como servicio; Python decide entre respuesta/aclaración y ejecución/evaluación. Hallazgo: todas las respuestas actuales activan evaluación visual. Migración de lenguaje descartada. Entrega cloud con estado compartido sigue pendiente de implementación y validación específica."
     }
   ]
 }

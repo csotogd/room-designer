@@ -113,7 +113,10 @@ describe('TypeScript clients against Python + real ADK tools', () => {
     const image = `data:image/png;base64,${png.toString('base64')}`
     const client = new DesignerClient({
       onState: () => { ready = true },
-      onReply: (value) => { replies.push(value); client.judge(image, value.evaluation) },
+      onReply: (value) => {
+        if (!value.evaluation) throw new Error('El diseño debe solicitar evaluación')
+        replies.push(value); client.judge(image, value.evaluation)
+      },
       onJudgement: (value) => grades.push(value), onError: (error) => errors.push(error), onConnection: () => {},
     }, `ws://127.0.0.1:${ports.designerPort}/ws`)
     try {
@@ -125,7 +128,7 @@ describe('TypeScript clients against Python + real ADK tools', () => {
       expect(grades.map((grade) => grade.mean)).toEqual([5, 5, 5, 7.5])
       expect(replies.map((reply) => reply.round)).toEqual([0, 1, 2, 3])
       expect(new Set(replies.map((reply) => reply.runId)).size).toBe(1)
-      expect(new Set(replies.map((reply) => reply.evaluation.revision)).size).toBe(4)
+      expect(new Set(replies.map((reply) => reply.evaluation!.revision)).size).toBe(4)
       expect(grades.at(-1)?.stopReason).toContain('objetivo alcanzado')
       const saved = await fetch(`http://127.0.0.1:${ports.designerPort}/state`).then((r) => r.json())
       expect(saved.verdict.mean).toBe(7.5)
@@ -161,6 +164,7 @@ describe('TypeScript clients against Python + real ADK tools', () => {
       expect(reply!.actions.some((action) => action.kind === 'placeNew')).toBe(true)
       const sharp = (await import('sharp')).default
       const png = await sharp({ create: { width: 32, height: 32, channels: 3, background: 'white' } }).png().toBuffer()
+      if (!reply!.evaluation) throw new Error('El diseño debe solicitar evaluación')
       client.judge(`data:image/png;base64,${png.toString('base64')}`, reply!.evaluation)
       await until(() => judgement !== undefined)
       expect(judgement!.verdict.overall).toBe(7)

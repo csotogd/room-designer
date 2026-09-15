@@ -90,3 +90,9 @@ Feature: Conversational room designer
     Given a local edit waiting for confirmation during a mouse gesture
     When a broadcast arrives before the acknowledgement of that edit
     Then releasing the mouse preserves the acknowledged room and its revision
+
+  Scenario: The backend can answer freely without changing or evaluating the room
+    Given a user message that needs advice or clarification
+    When the agent chooses to respond conversationally
+    Then the response and original message are remembered without changing the scene
+    And the service does not request a screenshot or start the visual judge

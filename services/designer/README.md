@@ -35,6 +35,18 @@ Para mezclar modelos: `DESIGNER_PICKER_PROVIDER`, `DESIGNER_PICKER_MODEL`,
 
 ## Tools y persistencia
 
+El chat acepta texto libre en `chat.text`: saludos, dudas, objetivos vagos e
+instrucciones precisas. Python interpreta el mensaje junto con el estado y el
+historial. El agente puede usar `respond_conversationally` para responder o pedir
+aclaraciones: ese turno conserva la escena y devuelve `evaluation: null`.
+La interfaz muestra la respuesta y espera al usuario. Solo captura una imagen
+cuando el servicio devuelve un ticket `evaluation`. El modo conversacional
+bloquea cambios de escena dentro del mismo turno; tampoco puede seleccionarse
+después de haber ejecutado modificaciones.
+
+Este contrato funciona en el servicio WebSocket Python existente. No implica
+un despliegue nuevo en Cloud Run ni la activación de credenciales de Gemini.
+
 Las diez tools son `get_room`, `search_catalog`, `set_room`, `add_opening`,
 `clear_openings`, `place_furniture`, `replace_furniture`, `move_furniture`,
 `rotate_furniture`, `remove_furniture`. Colocar/reemplazar incluye búsqueda,

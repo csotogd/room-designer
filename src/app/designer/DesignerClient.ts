@@ -3,7 +3,7 @@ import type { DesignerAction, DesignerJudgement, DesignerRoomState, EditResult, 
 export interface DesignerReply {
   requestId: string
   runId: string
-  evaluation: EvaluationTicket
+  evaluation: EvaluationTicket | null
   reply: string
   actions: DesignerAction[]
   state: DesignerRoomState

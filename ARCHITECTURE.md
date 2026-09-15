@@ -63,6 +63,14 @@ del agente y bloquean explícitamente la sincronización.
 
 ## Un turno de diseño
 
+El servicio recibe texto libre; la interfaz no clasifica intenciones ni decide
+si falta información. El agente Python puede consultar el estado y elegir
+`respond_conversationally` para consejos o aclaraciones. Ese turno conserva la
+escena, persiste la conversación y devuelve `evaluation: null`; el navegador
+espera otro mensaje. Si hay trabajo de diseño, el servicio devuelve un ticket
+de evaluación y la interfaz aporta la captura solicitada. Las herramientas
+impiden mezclar una respuesta conversacional con mutaciones del mismo turno.
+
 1. Se serializan los turnos que comparten el room file.
 2. Se carga estado + conversación reciente y se crea una copia de trabajo.
 3. Un `LlmAgent` de ADK recibe las tools `get_room`, `search_catalog`,

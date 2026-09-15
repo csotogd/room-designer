@@ -138,7 +138,9 @@ class DesignWorkflow:
             brief, request_id, source="judge" if cycle.round else "user", round=cycle.round
         )
         cycle.revision = result["state"]["revision"]
-        cycle.awaiting_capture = True
+        cycle.awaiting_capture = not result.get("conversational", False)
+        if not cycle.awaiting_capture:
+            self.cycle = None
         await cycle.emit(
             {
                 "type": "reply",
@@ -147,7 +149,7 @@ class DesignWorkflow:
                 "judgeBrief": cycle.brief,
                 "refinement": cycle.round > 0,
                 "round": cycle.round,
-                "evaluation": {"runId": cycle.id, "revision": cycle.revision},
+                "evaluation": {"runId": cycle.id, "revision": cycle.revision} if cycle.awaiting_capture else None,
                 **result,
             }
         )

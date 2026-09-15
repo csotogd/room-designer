@@ -56,6 +56,15 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('ChatPanel judge-agent handoff', () => {
+  test('renders a conversational response without starting capture or judging', async () => {
+    await submit()
+    events().onReply({ ...reply(), evaluation: null, reply: '¿Qué ambiente buscas?' })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(text()).toContain('¿Qué ambiente buscas?')
+    expect(host.screenshot).not.toHaveBeenCalled()
+    expect(mock.judge).not.toHaveBeenCalled()
+    expect(stopButton().hidden).toBe(true)
+  })
   test('opens the conversation on submit and keeps the idea if the service is offline', async () => {
     mock.connected = false
     await submit()

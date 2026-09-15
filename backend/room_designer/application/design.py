@@ -17,12 +17,16 @@ class DesignTools:
     def __init__(self, editor: RoomEditor, search: ProductSearch, picker: ProductPicker, brief: str):
         self.editor, self.search, self.picker, self.brief = editor, search, picker, brief
         self.rejected: list[Json] = []
+        self.conversational = False
+        self.initial_action_count = len(editor.actions)
         # ADK may execute multiple function calls concurrently. A turn has one mutation order.
         self.lock = asyncio.Lock()
 
     async def _perform(self, intent: Json, operation) -> Json:
         async with self.lock:
             try:
+                if self.conversational:
+                    raise ValueError("Este turno es conversacional; no admite cambios de escena")
                 value = operation()
                 if hasattr(value, "__await__"):
                     value = await value
@@ -30,6 +34,18 @@ class DesignTools:
             except (ValueError, LookupError) as error:
                 self.rejected.append({"intent": intent, "reason": str(error)})
                 return {"status": "rejected", "reason": str(error)}
+
+    async def respond_conversationally(self) -> dict:
+        """Elige consejo o aclaración sin cambiar la escena ni evaluarla visualmente.
+
+        Llama antes de responder en lenguaje natural. Puedes seguir consultando datos.
+        No se puede combinar con cambios de escena en el mismo turno.
+        """
+        async with self.lock:
+            if len(self.editor.actions) > self.initial_action_count:
+                return {"status": "rejected", "reason": "El turno ya contiene cambios de escena"}
+            self.conversational = True
+            return {"status": "success"}
 
     async def get_room(self) -> dict:
         """Read the current room and furniture identifiers, including changes made during this turn."""
@@ -154,6 +170,7 @@ class DesignTools:
 
     def functions(self) -> list:
         return [
+            self.respond_conversationally,
             self.get_room,
             self.search_catalog,
             self.set_room,
@@ -254,9 +271,15 @@ class DesignSession:
                 ]
             )[-40:]
             editor.state["revision"] = uuid4().hex
-            # Previous scores remain in history, but a new turn needs a new capture.
-            editor.state.pop("verdict", None)
-            response = {"reply": reply, "actions": editor.actions, "rejected": tools.rejected}
+            # Una conversación sin cambios conserva la evaluación de la escena.
+            if not tools.conversational:
+                editor.state.pop("verdict", None)
+            response = {
+                "reply": reply,
+                "actions": editor.actions,
+                "rejected": tools.rejected,
+                "conversational": tools.conversational,
+            }
             apply_action(
                 editor.state,
                 {"kind": "recordChatReceipt", "receipt": {"id": request_id, "digest": digest, "response": response}},
