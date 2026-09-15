@@ -1,0 +1,14 @@
+.gcloudignore
+.git
+.gitignore
+#!include:.gitignore
+.terraform/
+**/.terraform/**
+.env
+.env.*
+gha-creds-*.json
+.bootstrap-state/
+.delivery/
+data/
+public/catalog/
+tablero.html

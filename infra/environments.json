@@ -1,0 +1,5 @@
+{
+  "dev": { "project_id": "room-designer-508414", "airflow_enabled": false },
+  "stage": { "project_id": "room-designer-stage", "airflow_enabled": false },
+  "prod": { "project_id": "room-designer-prod", "airflow_enabled": false }
+}

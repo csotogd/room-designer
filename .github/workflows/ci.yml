@@ -2,12 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev, stage, prod]
   pull_request:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Nunca interrumpir un apply en curso. Los PR sí cancelan revisiones viejas.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   backend:
@@ -25,7 +29,7 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install -c requirements.lock -e '.[dev]'
       - name: Lint (ruff)
-        run: .venv/bin/ruff check backend
+        run: .venv/bin/ruff check backend ops
       - name: Tests (unitarios + aceptación Gherkin + arquitectura + proveedores ADK)
         run: .venv/bin/python -m pytest -q
 
@@ -70,6 +74,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: dist/
+          retention-days: 7
 
   mutacion:
     name: Mutation testing (rompe < 75%)
@@ -100,12 +109,111 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Validar GitHub Actions
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 .github/workflows/ci.yml
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: 1.12.6
       - name: Formato
-        run: tofu -chdir=infra/gcp fmt -check -diff
+        run: tofu fmt -check -diff -recursive infra
       - name: Validación
         run: |
           tofu -chdir=infra/gcp init -backend=false -input=false
           tofu -chdir=infra/gcp validate
+          tofu -chdir=infra/gcp test
+          tofu -chdir=infra/bootstrap init -backend=false -input=false
+          tofu -chdir=infra/bootstrap validate
+          tofu -chdir=infra/bootstrap test
+          tofu -chdir=infra/airflow init -backend=false -input=false
+          tofu -chdir=infra/airflow validate
+          tofu -chdir=infra/airflow test
+
+  quality-gate:
+    name: Puerta de calidad
+    if: ${{ always() }}
+    needs: [backend, calidad, build, mutacion, infra]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Rechazar fallos, cancelaciones y comprobaciones omitidas
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python -c 'import json, os; results = json.loads(os.environ["RESULTS"]); assert results and all(job["result"] == "success" for job in results.values()), results'
+
+  deploy:
+    name: Desplegar ${{ github.ref_name }}
+    needs: quality-gate
+    if: github.event_name == 'push' && contains(fromJSON('["dev","stage","prod"]'), github.ref_name)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: ${{ github.ref_name }}
+      url: ${{ steps.outputs.outputs.frontend_url }}
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolver entorno y exigir autenticación configurada
+        id: target
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+        run: |
+          test -n "$WIF_PROVIDER" || { echo 'Falta activar WIF en este entorno de GitHub'; exit 1; }
+          python ops/delivery.py target infra/environments.json >> "$GITHUB_OUTPUT"
+      - uses: google-github-actions/auth@v3
+        id: auth
+        with:
+          project_id: ${{ steps.target.outputs.project_id }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: rd-${{ github.ref_name }}-deploy@${{ steps.target.outputs.project_id }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Cloud Build construye y prueba en el proyecto del entorno
+        id: images
+        env:
+          PROJECT_ID: ${{ steps.target.outputs.project_id }}
+          ENVIRONMENT: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p .delivery
+          gcloud builds submit . --project="$PROJECT_ID" --region=europe-west1 \
+            --config=cloudbuild.yaml --ignore-file=.gcloudignore \
+            --service-account="projects/$PROJECT_ID/serviceAccounts/rd-$ENVIRONMENT-build@$PROJECT_ID.iam.gserviceaccount.com" \
+            --gcs-source-staging-dir="gs://$PROJECT_ID-build-source/source" \
+            --substitutions="_ENVIRONMENT=$ENVIRONMENT,_COMMIT_SHA=$COMMIT_SHA" \
+            --timeout=1200s --suppress-logs --format=json > .delivery/build.json
+          python ops/delivery.py build .delivery/build.json --commit "$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.6
+      - name: Planificar y aplicar sin borrados ni reemplazos automáticos
+        env:
+          TF_IN_AUTOMATION: 'true'
+          TF_VAR_project_id: ${{ steps.target.outputs.project_id }}
+          TF_VAR_web_image: ${{ steps.images.outputs.frontend }}
+          STATE_BUCKET: ${{ steps.target.outputs.state_bucket }}
+          STATE_PREFIX: ${{ steps.target.outputs.state_prefix }}
+          ENVIRONMENT: ${{ github.ref_name }}
+        run: |
+          tofu -chdir=infra/gcp init -input=false -backend-config="bucket=$STATE_BUCKET" -backend-config="prefix=$STATE_PREFIX"
+          tofu -chdir=infra/gcp plan -input=false -lock-timeout=5m -var-file="environments/$ENVIRONMENT.tfvars" -out=release.tfplan
+          tofu -chdir=infra/gcp show -json release.tfplan > .delivery/plan.json
+          python ops/delivery.py plan .delivery/plan.json
+          tofu -chdir=infra/gcp apply -input=false -lock-timeout=5m release.tfplan
+      - name: Comprobar recursos y versión desplegada
+        id: outputs
+        env:
+          PROJECT_ID: ${{ steps.target.outputs.project_id }}
+          ENVIRONMENT: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          EXPECTED_WEB_IMAGE: ${{ steps.images.outputs.frontend }}
+        run: python ops/cloud_smoke.py
+      - name: Desplegar Airflow según la configuración del entorno
+        if: steps.target.outputs.airflow_enabled == 'true'
+        env:
+          AIRFLOW_ALERT_EMAIL: ${{ vars.AIRFLOW_ALERT_EMAIL }}
+        run: python ops/airflow_delivery.py

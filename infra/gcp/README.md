@@ -1,58 +1,26 @@
-# Infraestructura GCP — pipeline de catálogo
+# Infraestructura GCP por entorno
 
-Vía cloud del pipeline (la vía local sigue siendo `npm run pipeline:*` con
-`data/catalog/`). Misma lógica, mismos puertos; cambian los adaptadores:
+La guía de activación, permisos, pruebas y límites está en
+[CI/CD con Cloud Build](../../docs/CI-CD.md).
 
-| Puerto | Local (demo) | Cloud (GCP) |
-|---|---|---|
-| Disparo | CLI manual | **Cloud Scheduler** (cron por sitio × país) |
-| AssetStore | carpeta `data/catalog` | **GCS** (`<site>-<country>/...`, mismas claves) |
-| Selección de imagen | heurística de packshot | **VLM juez** (flag `vlm_image_selection_enabled`) con fallback heurístico |
-| "Decode" de imagen sin packshot | — | flag `vlm_image_decode_enabled` = **false** (apagado por decisión de producto) |
-| MeshGenerator | Tripo / Space TRELLIS | Tripo API (secreto en Secret Manager) o TRELLIS.2 self-host |
-| QualityJudge | Noop / manual | **VLM** (Anthropic / OpenAI-compatible / Vertex) |
-| Catálogo | `products.json` + `pipeline:link` | **Firestore**: colección `catalog_{site}_{country}` |
+`dev`, `stage` y `prod` utilizan proyectos, estados, identidades y datos
+separados. `infra/bootstrap` prepara APIs, WIF, Cloud Build y repositorios.
+Este módulo administra el editor y los recursos de la aplicación; consume
+el digest probado por Cloud Build.
 
-Cada documento del catálogo: precio, descripción extensa, medidas 3D (cm),
-enlace público al GLB en GCS, veredicto del juez y trazabilidad (URL origen,
-foto usada, timestamps).
+El editor tiene una imagen desplegable. El catálogo cloud **todavía no**:
+faltan el generador HTTP y los adaptadores de datos y cola. La validación
+bloquea `enable_catalog_runtime=true`; no se lanzan ingestas de pago ni se
+inventan valores de secretos.
 
-## Flujo
-
-```
-Cloud Scheduler (cron por sitio×país)
-  └─▶ Cloud Run Job "ingest"  ── scrapea + elige packshot (VLM/heurística)
-        ├─ assets → GCS
-        └─ producto pendiente → Pub/Sub ─▶ Cloud Run "generator" (push, ×8)
-                                             ├─ API 3D (Tripo) → GLB+preview → GCS
-                                             ├─ juez VLM → approved/rejected
-                                             └─ documento → Firestore catalog_{site}_{country}
-```
-
-## Despliegue
+## Validación sin crear recursos
 
 ```bash
-cd infra/gcp
-terraform init
-terraform apply -var project_id=<tu-proyecto>
-
-# claves de las APIs externas (una vez):
-echo -n "tsk_..." | gcloud secrets versions add room-designer-dev-tripo-api-key --data-file=-
-echo -n "sk-..."  | gcloud secrets versions add room-designer-dev-judge-api-key --data-file=-
-
-# imagen del pipeline:
-docker build -f pipeline/Dockerfile -t <artifact_repo>/pipeline:latest .
-docker push <artifact_repo>/pipeline:latest
+tofu -chdir=infra/gcp init -backend=false -input=false
+tofu fmt -check -recursive infra
+tofu -chdir=infra/gcp validate
+tofu -chdir=infra/gcp test
 ```
 
-Añadir un catálogo nuevo = añadir una entrada a `catalog_sources` en un
-`terraform.tfvars` (sitio, país, cron, límite) + su `SiteConfig` en
-`backend/room_designer/pipeline/sources.py`.
-
-## Pendiente de implementación en el contenedor
-
-Los entrypoints cloud del contenedor (`ingest` con `--country`, publicación
-en Pub/Sub, `serve-generator` HTTP, adaptadores GcsAssetStore y
-FirestoreCatalog, y el selector de imagen por VLM) están definidos por esta
-infra y por los puertos existentes del pipeline; se implementan en el
-siguiente ciclo. El flag de VLM-decode nace apagado.
+Estos tests usan un proveedor simulado. La verificación real posterior a la
+entrega es `ops/cloud_smoke.py`, descrita con sus límites en la guía.
