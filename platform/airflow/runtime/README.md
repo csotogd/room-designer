@@ -79,7 +79,7 @@ Se fijan las imágenes base por digest. El CLI y sus dependencias viven en
 
 ## Primera entrega
 
-Requiere completar la entrega base descrita en `../../docs/CI-CD.md`: revisión
+Requiere completar la entrega base descrita en `../../../docs/CI-CD.md`: revisión
 publicada, ramas protegidas, bootstrap, WIF y GitHub Environment. No se debe
 subir el árbol local con cambios ajenos sin preparar la revisión correspondiente.
 
@@ -97,7 +97,7 @@ subir el árbol local con cambios ajenos sin preparar la revisión correspondien
    Cada merge resuelve exclusivamente el proyecto y la activación de su rama
    desde `infra/environments.json`. Dev y stage entregan la aplicación base
    y omiten Airflow; no crean sus máquinas. En prod, tras la puerta de calidad y la
-   entrega base, `ops/airflow_delivery.py` ejecuta Cloud Build, prueba el DAG sin
+   entrega base, `platform/airflow/delivery.py` ejecuta Cloud Build, prueba el DAG sin
    red y el CLI, obtiene el digest y aplica el plan guardado de OpenTofu.
    Se rechaza un plan que borre o reemplace recursos.
 5. La entrega comprueba servicios saludables, imagen ejecutada y copia inicial.
@@ -232,14 +232,14 @@ medido RTO/RPO en ese entorno.
 
 ```bash
 npm run test:all && npm run typecheck && npm run lint:backend
-.venv/bin/ruff check deploy/airflow ops/airflow_delivery.py
-tofu -chdir=infra/airflow init -backend=false
-tofu -chdir=infra/airflow validate
-tofu -chdir=infra/airflow test
-docker build -t room-designer-airflow:local -f deploy/airflow/Dockerfile .
+.venv/bin/ruff check platform/airflow
+tofu -chdir=platform/airflow/infra init -backend=false
+tofu -chdir=platform/airflow/infra validate
+tofu -chdir=platform/airflow/infra test
+docker build -t room-designer-airflow:local -f platform/airflow/runtime/Dockerfile .
 docker run --rm --network none -e AIRFLOW_HOME=/tmp/airflow \
   -e AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags --entrypoint python \
-  room-designer-airflow:local /opt/designer/deploy/airflow/smoke_dag.py
+  room-designer-airflow:local /opt/designer/platform/airflow/runtime/smoke_dag.py
 ```
 
 Los escenarios están en `specs/features/catalog-orchestration.feature`; se

@@ -67,7 +67,7 @@ UNIT
   docker pull "$airflow_image"
   docker logout https://europe-west1-docker.pkg.dev
   copy_id=$(docker create --entrypoint true "$airflow_image")
-  docker cp "$copy_id:/opt/designer/deploy/airflow/." /opt/airflow-host/
+  docker cp "$copy_id:/opt/designer/platform/airflow/runtime/." /opt/airflow-host/
   docker rm "$copy_id"
   export STATE_DIR=/srv/airflow/state AIRFLOW_IMAGE="$airflow_image"
   export BACKUP_BUCKET
@@ -78,7 +78,7 @@ UNIT
     "${CATALOG_SITE:-polyhaven}" "${CATALOG_SITES:-polyhaven}" "${EMBEDDINGS_PROVIDER:-hashing}" \
     "${CATALOG_REFRESH_SCHEDULE:-0 4 * * *}" >> /opt/airflow-host/runtime.env
   docker run --rm --network none --user 0:0 --entrypoint python -v "$STATE_DIR:/state" \
-    "$AIRFLOW_IMAGE" /opt/designer/deploy/airflow/prepare_state.py /state
+    "$AIRFLOW_IMAGE" /opt/designer/platform/airflow/runtime/prepare_state.py /state
   docker compose -p catalog-airflow -f /opt/airflow-host/compose.yaml run --rm migrate
   docker compose -p catalog-airflow -f /opt/airflow-host/compose.yaml up -d --wait --wait-timeout 240
 

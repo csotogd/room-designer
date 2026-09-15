@@ -269,6 +269,15 @@
       "status": "done",
       "priority": "high",
       "updatedAt": "2026-09-15T22:47:26.000Z"
+    },
+    {
+      "id": "RD-010",
+      "title": "Reorganizar la plataforma de Airflow",
+      "description": "Completado: runtime, infraestructura y entrega de Airflow se reúnen bajo platform/airflow, con un índice que distingue sus responsabilidades de infra/gcp, infra/bootstrap y ops. CI, Cloud Build, OpenTofu, pruebas y documentación usan las rutas nuevas. Se preservan ui → app → core y los cambios concurrentes del editor. TDD: las pruebas de orquestación fallaron primero al exigir la nueva ubicación y quedaron verdes tras el movimiento. Validación: 229 pruebas Python, 284 frontend/integración, typecheck, lint y 4 pruebas de OpenTofu correctas.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "medium",
+      "updatedAt": "2026-09-15T23:34:00Z"
     }
   ]
 }

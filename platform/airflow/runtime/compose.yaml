@@ -23,7 +23,7 @@ x-airflow: &airflow
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://api:8080/execution/
     AIRFLOW__DAG_PROCESSOR__PARSING_PROCESSES: '1'
     AIRFLOW__LOGGING__BASE_LOG_FOLDER: /var/lib/airflow/logs
-    CATALOG_CLI: /opt/designer/deploy/airflow/catalog-job.sh
+    CATALOG_CLI: /opt/designer/platform/airflow/runtime/catalog-job.sh
     CATALOG_SITE: ${CATALOG_SITE:-polyhaven}
     CATALOG_SITES: ${CATALOG_SITES:-polyhaven}
     CATALOG_REFRESH_SCHEDULE: ${CATALOG_REFRESH_SCHEDULE:-0 4 * * *}
@@ -107,7 +107,7 @@ services:
 
   search:
     <<: *airflow
-    entrypoint: [/opt/designer/deploy/airflow/catalog-job.sh]
+    entrypoint: [/opt/designer/platform/airflow/runtime/catalog-job.sh]
     command: [search-serve]
     mem_limit: 1g
     depends_on: {}

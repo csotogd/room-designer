@@ -60,7 +60,7 @@ def dag_loader(monkeypatch):
         configuration.clear()
         monkeypatch.setenv("CATALOG_SITES", sites)
         monkeypatch.setenv("CATALOG_SITE", active)
-        runpy.run_path(str(ROOT / "deploy/airflow/catalog_refresh_dag.py"))
+        runpy.run_path(str(ROOT / "platform/airflow/runtime/catalog_refresh_dag.py"))
         return SimpleNamespace(tasks=tasks, configuration=configuration)
     return load
 
@@ -144,7 +144,7 @@ def test_tasks_share_durable_paths_and_explicit_active_site(catalog_dag):
 
 @scenario("Airflow services preserve state and expose only a loopback panel")
 def test_service_isolation_and_persistence():
-    stack = yaml.safe_load((ROOT / "deploy/airflow/compose.yaml").read_text())
+    stack = yaml.safe_load((ROOT / "platform/airflow/runtime/compose.yaml").read_text())
     services = stack["services"]
     assert services["api"]["ports"] == ["127.0.0.1:8080:8080"]
     assert "ports" not in services["postgres"]
@@ -161,13 +161,13 @@ def test_service_isolation_and_persistence():
 
 
 def test_panel_can_open_its_auth_file_without_writing_other_secrets():
-    services = yaml.safe_load((ROOT / "deploy/airflow/compose.yaml").read_text())["services"]
+    services = yaml.safe_load((ROOT / "platform/airflow/runtime/compose.yaml").read_text())["services"]
     assert "${STATE_DIR:?}/secrets/users.json:/var/lib/airflow/users.json" in services["api"]["volumes"]
     assert "${STATE_DIR:?}/secrets:/run/catalog-secrets:ro" in services["api"]["volumes"]
 
 
 def test_runtime_keeps_catalog_dependencies_outside_airflow():
-    dockerfile = (ROOT / "deploy/airflow/Dockerfile").read_text()
+    dockerfile = (ROOT / "platform/airflow/runtime/Dockerfile").read_text()
     assert "apache/airflow:3.3.1-python3.12@sha256:" in dockerfile
     assert "python -m venv /opt/catalog" in dockerfile
     assert "/opt/catalog/bin/pip install" in dockerfile
@@ -176,7 +176,7 @@ def test_runtime_keeps_catalog_dependencies_outside_airflow():
 
 @scenario("Reinitializing Airflow preserves its credentials and stored catalogs")
 def test_state_preparation_is_idempotent(tmp_path):
-    prepare = runpy.run_path(str(ROOT / "deploy/airflow/prepare_state.py"))["prepare"]
+    prepare = runpy.run_path(str(ROOT / "platform/airflow/runtime/prepare_state.py"))["prepare"]
     prepare(tmp_path)
     secret_dir = tmp_path / "secrets"
     secrets = {p.name: p.read_bytes() for p in secret_dir.iterdir()}
@@ -192,7 +192,7 @@ def test_prepared_database_uses_the_generated_postgres_password(tmp_path):
     import json
     from urllib.parse import urlparse
 
-    prepare = runpy.run_path(str(ROOT / "deploy/airflow/prepare_state.py"))["prepare"]
+    prepare = runpy.run_path(str(ROOT / "platform/airflow/runtime/prepare_state.py"))["prepare"]
     prepare(tmp_path)
     secrets = tmp_path / "secrets"
     assert urlparse((secrets / "database_uri").read_text()).password == (secrets / "postgres").read_text()
@@ -201,7 +201,7 @@ def test_prepared_database_uses_the_generated_postgres_password(tmp_path):
 
 @scenario("The Airflow host is isolated and its durable disk survives replacement")
 def test_host_security_and_recovery_contract():
-    resources = json.loads((ROOT / "infra/airflow/main.tf.json").read_text())["resource"]
+    resources = json.loads((ROOT / "platform/airflow/infra/main.tf.json").read_text())["resource"]
     firewall = resources["google_compute_firewall"]["iap"]
     assert firewall["source_ranges"] == ["35.235.240.0/20"]
     assert firewall["allow"] == [{"protocol": "tcp", "ports": ["22"]}]
@@ -220,19 +220,19 @@ def test_host_security_and_recovery_contract():
 
 
 def test_host_release_requires_an_immutable_image():
-    variables = json.loads((ROOT / "infra/airflow/main.tf.json").read_text())["variable"]
+    variables = json.loads((ROOT / "platform/airflow/infra/main.tf.json").read_text())["variable"]
     assert "@sha256:" in variables["airflow_image"]["validation"]["condition"]
 
 
 def test_monitoring_detects_a_host_that_stops_sending_heartbeats():
-    resources = json.loads((ROOT / "infra/airflow/main.tf.json").read_text())["resource"]
+    resources = json.loads((ROOT / "platform/airflow/infra/main.tf.json").read_text())["resource"]
     alert = resources["google_monitoring_alert_policy"]["missing_heartbeat"]
     assert alert["conditions"][0]["condition_absent"]["duration"] == "600s"
     assert "heartbeat" in resources["google_logging_metric"]["heartbeat"]["filter"]
 
 
 def test_docker_waits_for_the_persistent_disk_on_reboot():
-    startup = (ROOT / "deploy/airflow/startup.sh").read_text()
+    startup = (ROOT / "platform/airflow/runtime/startup.sh").read_text()
     assert "RequiresMountsFor=/srv/airflow" in startup
     assert "/etc/systemd/system/docker.service.d" in startup
     assert "/etc/fstab" in startup
@@ -252,7 +252,7 @@ def test_failed_task_emits_only_operational_identifiers(catalog_dag, monkeypatch
 
 @pytest.fixture
 def host_tools():
-    return runpy.run_path(str(ROOT / "deploy/airflow/host.py"))
+    return runpy.run_path(str(ROOT / "platform/airflow/runtime/host.py"))
 
 
 @scenario("Airflow upgrades wait until catalog runs have finished")
@@ -353,7 +353,7 @@ def simulate_mount(tmp_path, filesystem):
     env = dict(os.environ, PATH=str(commands) + ":" + os.environ["PATH"],
                TEST_FILESYSTEM=filesystem, TEST_CALLS=str(log))
     result = subprocess.run(["bash", "-c", 'source "$1"; mount_data /dev/example "$2"', "test",
-                             str(ROOT / "deploy/airflow/startup.sh"), str(tmp_path / "mount")],
+                             str(ROOT / "platform/airflow/runtime/startup.sh"), str(tmp_path / "mount")],
                             env=env, capture_output=True)
     return result.returncode, log.read_text().splitlines()
 
@@ -373,9 +373,9 @@ def test_startup_formats_only_an_empty_disk(tmp_path):
 def test_delivery_follows_versioned_activation_and_quality_gates():
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     assert jobs["deploy"]["needs"] == "quality-gate"
-    step = next(step for step in jobs["deploy"]["steps"] if "ops/airflow_delivery.py" in step.get("run", ""))
+    step = next(step for step in jobs["deploy"]["steps"] if "platform/airflow/delivery.py" in step.get("run", ""))
     assert step["if"] == "steps.target.outputs.airflow_enabled == 'true'"
-    cloudbuild = yaml.safe_load((ROOT / "deploy/airflow/cloudbuild.yaml").read_text())
+    cloudbuild = yaml.safe_load((ROOT / "platform/airflow/runtime/cloudbuild.yaml").read_text())
     assert {step["id"] for step in cloudbuild["steps"]} >= {"build-airflow", "test-dag", "test-catalog-cli"}
     assert len(cloudbuild["images"]) == 1
     assert "enable_catalog_runtime = false" in (ROOT / "infra/gcp/environments/dev.tfvars").read_text()
@@ -384,7 +384,7 @@ def test_delivery_follows_versioned_activation_and_quality_gates():
 @pytest.fixture
 def airflow_delivery(monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "ops"))
-    return runpy.run_path(str(ROOT / "ops/airflow_delivery.py"))
+    return runpy.run_path(str(ROOT / "platform/airflow/delivery.py"))
 
 
 @scenario("Airflow activation follows versioned environment settings")

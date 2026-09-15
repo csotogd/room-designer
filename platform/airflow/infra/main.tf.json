@@ -289,7 +289,7 @@
           "block-project-ssh-keys": "TRUE",
           "airflow-image": "${var.airflow_image}",
           "airflow-backup-bucket": "${google_storage_bucket.backups.name}",
-          "startup-script": "${file(\"${path.module}/../../deploy/airflow/startup.sh\")}"
+          "startup-script": "${file(\"${path.module}/../runtime/startup.sh\")}"
         },
         "labels": {
           "app": "room-designer",

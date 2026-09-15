@@ -6,9 +6,9 @@ COPY backend/room_designer ./backend/room_designer
 # ADK y el catálogo tienen su propio entorno para no alterar dependencias de Airflow.
 RUN python -m venv /opt/catalog && /opt/catalog/bin/pip install --no-cache-dir -c requirements.lock .
 COPY services/search/eval ./services/search/eval
-COPY deploy/airflow ./deploy/airflow
-COPY deploy/airflow/catalog_refresh_dag.py /opt/airflow/dags/catalog_refresh_dag.py
-RUN chmod 755 /opt/designer/deploy/airflow/catalog-job.sh
+COPY platform/airflow/runtime ./platform/airflow/runtime
+COPY platform/airflow/runtime/catalog_refresh_dag.py /opt/airflow/dags/catalog_refresh_dag.py
+RUN chmod 755 /opt/designer/platform/airflow/runtime/catalog-job.sh
 ARG COMMIT_SHA=local
 LABEL org.opencontainers.image.revision=$COMMIT_SHA
 USER airflow

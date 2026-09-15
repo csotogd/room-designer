@@ -32,7 +32,7 @@ def main():
         raise ValueError("Falta el destinatario de alertas de Airflow")
     build = json.loads(run([
         "gcloud", "builds", "submit", ".", f"--project={project}", "--region=europe-west1",
-        "--config=deploy/airflow/cloudbuild.yaml", "--ignore-file=.gcloudignore",
+        "--config=platform/airflow/runtime/cloudbuild.yaml", "--ignore-file=.gcloudignore",
         f"--service-account=projects/{project}/serviceAccounts/rd-{environment}-build@{project}.iam.gserviceaccount.com",
         f"--gcs-source-staging-dir=gs://{project}-build-source/source",
         f"--substitutions=_ENVIRONMENT={environment},_COMMIT_SHA={commit}",
@@ -41,7 +41,7 @@ def main():
     image = release_image(build, project, environment, commit)
     env = dict(os.environ, TF_IN_AUTOMATION="true", TF_VAR_project_id=project,
                TF_VAR_environment=environment, TF_VAR_airflow_image=image, TF_VAR_notification_email=email)
-    tofu = ["tofu", "-chdir=infra/airflow"]
+    tofu = ["tofu", "-chdir=platform/airflow/infra"]
     run([*tofu, "init", "-input=false", f"--backend-config=bucket={target['state_bucket']}",
          f"--backend-config=prefix=environments/{environment}/airflow"], env)
     run([*tofu, "plan", "-input=false", "-lock-timeout=5m", "-out=release.tfplan"], env)

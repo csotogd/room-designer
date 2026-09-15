@@ -124,9 +124,9 @@ jobs:
           tofu -chdir=infra/bootstrap init -backend=false -input=false
           tofu -chdir=infra/bootstrap validate
           tofu -chdir=infra/bootstrap test
-          tofu -chdir=infra/airflow init -backend=false -input=false
-          tofu -chdir=infra/airflow validate
-          tofu -chdir=infra/airflow test
+          tofu -chdir=platform/airflow/infra init -backend=false -input=false
+          tofu -chdir=platform/airflow/infra validate
+          tofu -chdir=platform/airflow/infra test
 
   quality-gate:
     name: Puerta de calidad
@@ -216,4 +216,4 @@ jobs:
         if: steps.target.outputs.airflow_enabled == 'true'
         env:
           AIRFLOW_ALERT_EMAIL: ${{ vars.AIRFLOW_ALERT_EMAIL }}
-        run: python ops/airflow_delivery.py
+        run: python platform/airflow/delivery.py
