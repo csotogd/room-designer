@@ -9,9 +9,15 @@ defecto en todos los entornos; Airflow continúa desactivado.
 En `room-designer-508414` (dev) existe el secreto
 `room-designer-dev-gemini-api-key`, versión `1`, habilitada. Su clave está
 restringida a `generativelanguage.googleapis.com`. La API permite listar
-modelos, incluido `gemini-3.5-flash`, pero generar una respuesta devuelve
-`429 RESOURCE_EXHAUSTED`: **saldo de prepago agotado**. No es un fallo de
-autenticación ni se soluciona con retries. No se ha recargado saldo.
+modelos, incluido `gemini-3.5-flash`. La primera prueba de generación devolvió
+`429 RESOURCE_EXHAUSTED` por falta de prepago, no por autenticación.
+
+El 16 de septiembre de 2026, con autorización del propietario, se aceptaron
+las condiciones de AI Studio, se importó el proyecto dev existente a su panel
+y se compraron **5,00 EUR de créditos Gemini**. Google confirmó el pago y la
+adición de créditos; la recarga automática quedó desactivada. No se ha repetido
+todavía una generación real después de la recarga. Los créditos pertenecen a
+la cuenta de facturación, no a una clave concreta.
 
 La primera clave creada se revocó al comprobar que la herramienta de Google
 había impreso su valor en la salida de creación. La sustituta se transfirió
@@ -31,7 +37,7 @@ Verificado el 16 de septiembre de 2026: versiones accesibles, valores distintos,
 restricción exclusiva a `generativelanguage.googleapis.com` y autenticación HTTP
 200 al listar modelos en los tres proyectos. Stage y prod no se han probado
 con generación: esta comprobación no acredita saldo ni capacidad de responder.
-No se ha recargado saldo ni activado el chat. No copiar claves entre entornos.
+La recarga posterior no activa el chat. No copiar claves entre entornos.
 
 El bucket de assets de dev estaba vacío. La transferencia del catálogo local
 completo de Poly Haven no progresó y se canceló; **el catálogo no está cargado**.
@@ -68,8 +74,8 @@ completo de Poly Haven no progresó y se canceló; **el catálogo no está carga
 
 ## Activación pendiente
 
-1. Habilitar saldo para Gemini en AI Studio con autorización del propietario.
-   Comprobar una generación real, no solo el listado de modelos.
+1. Comprobar una generación real tras la recarga de 5 EUR ya confirmada,
+   no solo el listado de modelos.
 2. Publicar el catálogo completo, con modelos y texturas, en
    `gs://PROJECT-room-designer-ENV-assets/catalog/`. No subir código ni secretos
    por este canal. Los contenedores se construyen exclusivamente desde CI.
