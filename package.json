@@ -13,6 +13,7 @@
     "pipeline:link": ".venv/bin/catalog link",
     "pipeline:judge": ".venv/bin/catalog judge",
     "search:serve": ".venv/bin/search-serve",
+    "designer:local": ".venv/bin/python -m room_designer.local",
     "designer:serve": ".venv/bin/designer-serve",
     "search:sync": ".venv/bin/catalog sync",
     "search:eval": ".venv/bin/catalog eval",

@@ -192,3 +192,50 @@ sin carencias ni saturación y respetando el minimalismo funcional. El juez
 explica los problemas en sus notas y el diseñador recibe las dimensiones
 que quedan por debajo del objetivo para corregirlas. Las notas históricas
 que no incluyan los nuevos criterios muestran «Sin evaluar».
+
+## Prueba local con Secret Manager
+
+La clave de Gemini se obtiene al arrancar desde el secreto de **dev**, versión
+`1`, en `room-designer-508414`. No se copia a `.env`, no se imprime y no se
+incluye en el frontend. Las credenciales de sesión de Google (ADC) sí se guardan
+en la configuración de usuario que gestiona Google Cloud CLI.
+
+Con Google Cloud CLI instalada, inicia sesión una vez:
+
+```bash
+gcloud auth application-default login --disable-quota-project --scopes=https://www.googleapis.com/auth/cloud-platform
+gcloud auth application-default set-quota-project room-designer-508414
+```
+
+Este flujo estándar solicita el ámbito OAuth de Google Cloud; las operaciones
+permitidas dependen del IAM de la cuenta autenticada. Se necesita permiso de
+lectura de la versión del secreto. No se cambian permisos IAM al arrancar.
+
+Desde la raíz del repositorio, en terminales distintas:
+
+```bash
+npm run search:serve
+npm run designer:local
+npm run dev
+```
+
+Si el buscador ya está funcionando en `8787`, reutilízalo. Abre la dirección
+que muestra Vite (normalmente `http://localhost:5173`). El backend local escucha
+en `127.0.0.1:8790`; `/healthz` debe indicar `gemini/gemini-3.5-flash` y un
+catálogo no vacío. El proveedor del diseñador, selector de muebles y juez es
+Gemini real. La ausencia de autenticación o de acceso al secreto detiene el
+arranque: nunca se sustituye por agentes simulados.
+
+El comando usa `gemini-3.5-flash`, ya validado en dev. Se puede cambiar con
+`DESIGNER_MODEL` o los modelos por rol. `DESIGNER_GEMINI_SECRET` admite otra
+referencia completa a una versión (`projects/.../secrets/.../versions/...`).
+El arranque local ignora las URL de API alternativas y las claves por rol:
+todos reciben la clave recuperada y usan la API oficial de Gemini.
+No se necesita acceder al valor de la clave manualmente.
+
+Prueba una petición con varios cambios y despliega «Pensando…». Tras la
+captura aparecen las seis notas del juez. **Detener** interrumpe las rondas de
+mejora. Las llamadas reales utilizan el saldo de Gemini del proyecto.
+
+Referencias: [autenticación de Secret Manager](https://docs.cloud.google.com/secret-manager/docs/authentication)
+y [acceso a versiones](https://docs.cloud.google.com/secret-manager/docs/access-secret-version).

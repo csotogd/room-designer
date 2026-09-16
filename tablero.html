@@ -325,6 +325,15 @@
       "status": "done",
       "priority": "high",
       "updatedAt": "2026-09-16T10:38:56.609502Z"
+    },
+    {
+      "id": "RD-018",
+      "title": "Arrancar el editor local con Gemini desde Secret Manager",
+      "description": "Comprobar la configuración local, los servicios necesarios y la conexión a modelos reales para explicar cómo probar el editor. Comprobado: el buscador local en 8787 responde saludable con 520 productos e híbrido CLIP; no hay diseñador escuchando en 8790 ni editor en 5173. El .env local y el entorno no tienen clave Gemini. La configuración se carga con dotenv y los endpoints del frontend apuntan por defecto a localhost. Se facilitan pasos para añadir la clave local, elegir Gemini y arrancar diseñador/editor; todavía no se ha realizado una llamada real desde este entorno. Corrección solicitada: usar la clave existente de Secret Manager también al arrancar en local, sin copiarla a .env. Revisar el proyecto y el secreto acordados. Corrección verificada en infra/gcp/frontend.tf y docs/CHAT-CLOUD.md: la fuente acordada es projects/room-designer-508414/secrets/room-designer-dev-gemini-api-key/versions/1. Cloud Run inyecta la clave como variable de proceso GOOGLE_API_KEY; no es un archivo .env. El arranque local actual solo carga dotenv/os.environ y aún no consulta Secret Manager; gcloud tampoco está disponible en PATH de esta sesión. La recomendación anterior de copiar la clave a .env queda retirada. No se ha leído ni mostrado la clave. Pendiente de implementación, si se solicita, el arranque local autenticado desde Secret Manager; no se afirma que la prueba real esté funcionando. Implementación autorizada: crear un arranque reproducible que obtenga el secreto dev solo en memoria y comprobar editor y backend reales. Aplicar TDD; no usar claves en .env ni imprimir secretos. Resultado: npm run designer:local obtiene la versión 1 del secreto dev mediante ADC, solo en memoria; configura los tres agentes con Gemini 3.5 Flash y API oficial, escucha en loopback y falla sin modo fake si falta acceso. Pruebas TDD en rojo y verde: 300 Python, 228 frontend/integración, typecheck y lint correctos en la entrega aislada. Autenticación de Google completada, cuota/proyecto local asociados a dev. Lectura real del secreto correcta; /healthz confirma Gemini para diseñador, picker y juez y 520 productos. Una generación directa respondió CONEXION_OK y una prueba real desde el editor devolvió un saludo sin alterar la habitación; se verificó Pensando, Ver pensamiento y actividad atribuida al Diseñador. Editor en 127.0.0.1:5173 y backend en 127.0.0.1:8790 activos. La clave no se imprimió ni se copió a .env.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "medium",
+      "updatedAt": "2026-09-16T11:50:19.566290Z"
     }
   ]
 }
