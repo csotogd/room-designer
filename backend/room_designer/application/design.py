@@ -2,15 +2,27 @@
 
 import asyncio
 import hashlib
+import inspect
 import json
 from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Literal, NotRequired, TypedDict
 from uuid import uuid4
 
 from room_designer.application.critique import record_verdict
 from room_designer.application.ports import AgentRuntime, ProductPicker, ProductSearch, RoomRepository
 from room_designer.domain.reconciliation import merge_scene, scene_snapshot, validate_scene
 from room_designer.domain.room import Json, RoomEditor, apply_action
+
+
+class FurnitureChange(TypedDict):
+    operation: Literal["move", "rotate", "replace", "remove"]
+    uid: str
+    x: NotRequired[float]
+    y: NotRequired[float]
+    z: NotRequired[float]
+    rotation: NotRequired[float]
+    search_query: NotRequired[str]
 
 
 class DesignTools:
@@ -32,8 +44,11 @@ class DesignTools:
                     value = await value
                 return {"status": "success", "action": value}
             except (ValueError, LookupError) as error:
-                self.rejected.append({"intent": intent, "reason": str(error)})
-                return {"status": "rejected", "reason": str(error)}
+                return self._reject(intent, str(error))
+
+    def _reject(self, intent: Json, reason: str) -> Json:
+        self.rejected.append({"intent": intent, "reason": reason})
+        return {"status": "rejected", "reason": reason}
 
     async def respond_conversationally(self) -> dict:
         """Elige consejo o aclaración sin cambiar la escena ni evaluarla visualmente.
@@ -168,8 +183,38 @@ class DesignTools:
         """Remove one existing furniture uid from the room."""
         return await self._perform({"kind": "remove", "targetUid": uid}, lambda: self.editor.remove(uid))
 
+    async def apply_furniture_changes(self, changes: list[FurnitureChange]) -> dict:
+        """Aplica varios cambios en orden dentro del mismo turno, antes de evaluar la escena.
+
+        Cada cambio contiene operation y los argumentos de la herramienta correspondiente:
+        move: uid, x, z y opcionalmente y; rotate: uid, rotation (grados);
+        replace: uid, search_query; remove: uid.
+        Ejemplo: [{"operation": "move", "uid": "a", "x": 1, "z": 2},
+        {"operation": "rotate", "uid": "b", "rotation": 90}].
+        Los cambios posteriores ven el resultado de los anteriores. Devuelve un resultado
+        por cambio; un rechazo no descarta los demás. Revisa las posiciones reparadas.
+        """
+        operations = {
+            "move": self.move_furniture,
+            "rotate": self.rotate_furniture,
+            "replace": self.replace_furniture,
+            "remove": self.remove_furniture,
+        }
+        results = []
+        for change in changes:
+            try:
+                arguments = dict(change)
+                operation = operations[arguments.pop("operation")]
+                inspect.signature(operation).bind(**arguments)
+            except (KeyError, TypeError, ValueError) as error:
+                results.append(self._reject(change, f"Cambio de mueble inválido: {error}"))
+                continue
+            results.append(await operation(**arguments))
+        return {"results": results}
+
     def functions(self) -> list:
         return [
+            self.apply_furniture_changes,
             self.respond_conversationally,
             self.get_room,
             self.search_catalog,

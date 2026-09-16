@@ -298,6 +298,15 @@
       "priority": "high",
       "updatedAt": "2026-09-16T10:01:30Z",
       "scopeUpdate": "Recarga puntual completada: Google mostró «Se realizó el pago» y «Se agregaron los créditos EUR 5.00». Recarga automática verificada desactivada antes del pago. No se han realizado otros cargos ni desplegado servicios. Pendientes del trabajo general: comprobar generación tras recarga, cargar catálogo y desplegar."
+    },
+    {
+      "id": "RD-014",
+      "title": "Combinar varios cambios del juez en un mismo turno",
+      "description": "Completado: herramienta tipada para agrupar movimientos, giros, sustituciones y eliminaciones en orden dentro del mismo turno; instrucciones del agente actualizadas para completar las correcciones antes de responder. Cada cambio conserva sus guardas; los rechazos se informan sin descartar el resto. El frontend aplica la tanda antes de la captura y permite deshacerla en un paso. TDD: aceptación y unitarios observados en rojo, implementación y refactor con pruebas verdes. Validación aislada del contenido entregado: 263 pruebas Python, 202 frontend/integración, typecheck, Ruff y build correctos; Gemini/ADK simulado, sin llamadas de pago. La suite compartida inicial encontró siete fallos de la tarea concurrente RD-015; no se modificó ese trabajo. No se tocó src/core ni src/app en esta entrega. Commit y push solicitados por el usuario.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "high",
+      "updatedAt": "2026-09-16T10:09:20.960682+00:00"
     }
   ]
 }

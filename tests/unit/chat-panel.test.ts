@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, test, vi, type Mock } from 'vi
 import type { DesignerEvents, DesignerReply } from '../../src/app/designer/DesignerClient'
 import type { DesignerJudgement, DesignerRoomState, DesignerScore, ManualEdit } from '../../src/app/designer/actions'
 import { sceneFromState } from '../../src/app/designer/scene'
+import { applyDesignerActions } from '../../src/app/designer/actionApplier'
+import { DefaultCatalog } from '../../src/app/catalog/DefaultCatalog'
+import { CommandStack } from '../../src/app/commands/CommandStack'
+import { FloorPlan } from '../../src/core/model/FloorPlan'
+import { Project } from '../../src/core/model/Project'
 import { ChatPanel, type ChatPanelHost } from '../../src/ui/panels/ChatPanel'
 
 const mock = vi.hoisted(() => ({ connected: true, events: null as DesignerEvents | null, chat: vi.fn(), judge: vi.fn(), stop: vi.fn(), edit: vi.fn() }))
@@ -56,6 +61,47 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('ChatPanel judge-agent handoff', () => {
+  test('aplica varios movimientos, un giro y una sustitución antes de capturar la ronda', async () => {
+    await submit()
+    events().onReply(reply())
+    await vi.advanceTimersByTimeAsync(100)
+    events().onJudgement(judgement())
+
+    const catalog = new DefaultCatalog()
+    const [chair, replacement] = catalog.items()
+    const project = new Project(FloorPlan.rectangle(5, 4, 2.6))
+    const stack = new CommandStack()
+    const context = { project: () => project, catalog, stack, replaceRoom: vi.fn() }
+    applyDesignerActions(context, ['a', 'b', 'c', 'd'].map((uid, i) => ({
+      kind: 'placeNew', uid, productId: chair!.id, x: i + .5, z: 1, rotDeg: 0, query: '',
+    })))
+    const batch: DesignerReply = { ...reply(1, 'v2'), actions: [
+      { kind: 'move', uid: 'a', x: .5, z: 2 },
+      { kind: 'move', uid: 'b', x: 1.5, z: 2 },
+      { kind: 'rotate', uid: 'c', rotDeg: 90 },
+      { kind: 'replace', uid: 'd', productId: replacement!.id, x: 3.5, z: 1, rotDeg: 0, query: '' },
+    ] }
+    host.apply.mockImplementation((actions) => applyDesignerActions(context, actions))
+    host.screenshot.mockImplementation(() => {
+      const furniture = Object.fromEntries(project.furniture.map((item) => [item.id, item]))
+      expect(furniture.a!.position.z).toBe(2)
+      expect(furniture.b!.position.z).toBe(2)
+      expect(furniture.c!.rotationY).toBeCloseTo(Math.PI / 2)
+      expect(furniture.d!.item.id).toBe(replacement!.id)
+      return image
+    })
+    host.screenshot.mockClear()
+
+    events().onReply(batch)
+    expect(host.apply).toHaveBeenLastCalledWith(batch.actions)
+    expect(host.screenshot).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(host.screenshot).toHaveBeenCalledOnce()
+    expect(mock.judge).toHaveBeenLastCalledWith(image, batch.evaluation)
+    stack.undo()
+    expect(project.furniture.every((item) => item.position.z === 1 && item.rotationY === 0 && item.item.id === chair!.id)).toBe(true)
+  })
+
   test('renders a conversational response without starting capture or judging', async () => {
     await submit()
     events().onReply({ ...reply(), evaluation: null, reply: '¿Qué ambiente buscas?' })

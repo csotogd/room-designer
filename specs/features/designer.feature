@@ -96,3 +96,14 @@ Feature: Conversational room designer
     When the agent chooses to respond conversationally
     Then the response and original message are remembered without changing the scene
     And the service does not request a screenshot or start the visual judge
+
+  Scenario: A judge refinement applies multiple furniture changes before the next evaluation
+    Given a furnished room with several corrections requested by the judge
+    When the agent submits two moves, a rotation and a replacement in one batch
+    Then one reply contains all four validated changes in their requested order
+    And the next screenshot is requested only for the complete updated room
+
+  Scenario: A rejected change does not discard the other changes in a turn
+    Given a batch containing valid changes and an invalid furniture identifier
+    When the agent applies the batch
+    Then the valid changes are preserved in order and the rejection is reported
