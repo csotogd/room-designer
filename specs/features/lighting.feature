@@ -3,6 +3,11 @@ Feature: Light points
   apliques de pared y lámparas de pie/mesa, con intensidad y temperatura de color.
   Además existe un sol con hora del día.
 
+  Scenario: The editor has no time of day control
+    Given the room editor
+    Then the scene controls have no time of day slider or clock
+    And creating a room does not require a time of day control
+
   Scenario: Place a ceiling light
     Given a project with a rectangular room of 5 by 4 meters
     When I place a ceiling light at (2.5, 2)

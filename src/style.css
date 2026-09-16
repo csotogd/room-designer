@@ -119,14 +119,11 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
   position: absolute; top: 78px; left: calc(var(--catalog-width) + 24px); right: calc(var(--chat-width) + 20px);
   display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; pointer-events: none; z-index: 5;
 }
-.history-controls, .time-group {
+.history-controls {
   display: flex; align-items: center; padding: 3px; border: 1px solid var(--line);
   background: #ffffffed; border-radius: var(--radius); box-shadow: var(--shadow-sm); pointer-events: auto;
 }
 .history-controls .icon-btn + .icon-btn { border-left: 1px solid var(--line); border-radius: 0; }
-.time-group { gap: 9px; padding: 10px 12px; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
-.time-icon { width: 16px; height: 16px; flex: none; }
-#time-slider { width: 76px; }
 .workspace-footer {
   position: absolute; bottom: 0; left: var(--catalog-width); right: var(--chat-width);
   height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 12px;

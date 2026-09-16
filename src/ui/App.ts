@@ -250,12 +250,6 @@ export class App {
       this.load()
     })
 
-    const slider = this.el<HTMLInputElement>('#time-slider')
-    slider.addEventListener('input', () => {
-      this.project.setTimeOfDay(Number(slider.value))
-      this.refreshTimeLabel()
-    })
-
     // Panel de catálogo: minimizar a un asa lateral y alternar ancho.
     const catalog = this.el<HTMLElement>('#catalog')
     const reopen = this.el<HTMLButtonElement>('#catalog-reopen')
@@ -434,8 +428,6 @@ export class App {
     this.view3d.setProject(project)
     this.view2d?.setProject(project)
     this.cartPanel.setProject(project)
-    this.el<HTMLInputElement>('#time-slider').value = String(project.timeOfDay)
-    this.refreshTimeLabel()
     this.refreshUndoButtons()
     this.refreshRoomMeta()
     this.chatPanel?.onSceneChanged()
@@ -450,14 +442,6 @@ export class App {
       this.refreshRoomMeta()
       this.chatPanel?.onSceneChanged()
     })
-  }
-
-  private refreshTimeLabel(): void {
-    const hours = this.project.timeOfDay
-    const hh = String(Math.floor(hours)).padStart(2, '0')
-    const mm = String(Math.round((hours % 1) * 60)).padStart(2, '0')
-    this.el('#time-value').textContent = `${hh}:${mm}`
-    this.el('#time-slider').setAttribute('aria-valuetext', `${hh}:${mm}`)
   }
 
   private refreshRoomMeta(): void {
