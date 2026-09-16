@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from delivery import check_frontend, check_release
+from delivery import check_chat, check_frontend, check_release
 
 
 def verify_resources(api, project, environment, commit, probe):
@@ -107,6 +107,11 @@ def main():
             return response.read()
 
     check_frontend(fetch, commit)
+    backends = [c for c in service["template"]["containers"] if c.get("name") in {"designer", "search"}]
+    if backends:
+        if len(backends) != 2 or any(c["image"] != os.environ["EXPECTED_BACKEND_IMAGE"] for c in backends):
+            raise ValueError("Cloud Run no utiliza los dos contenedores Python probados")
+        check_chat(fetch)
     verify_resources(api, project, environment, commit, uuid.uuid4().hex)
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         output.write(f"frontend_url={url}\n")
@@ -115,7 +120,9 @@ def main():
                       f"Commit: `{commit}`. Editor privado: {url}\n\n"
                       "Verificados: revisión, digest, HTML/JS, GCS, Firestore, Pub/Sub e identidades. "
                       "Secret Manager: solo metadatos, sin versiones de claves. "
-                      "El catálogo automático y los backends de IA todavía no están desplegados.\n")
+                      + ("Chat configurado con Gemini y búsqueda comprobada; no se ha hecho una llamada de IA.\n"
+                         if backends else "Los backends de chat siguen desactivados.\n")
+                      + "El catálogo automático permanece desactivado.\n")
 
 
 if __name__ == "__main__":

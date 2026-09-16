@@ -15,6 +15,7 @@ Feature: Deploy isolated environments from protected branches
   Scenario: Cloud Build in the target project must pass before deployment
     Given a merged commit whose CI quality gates passed
     When CI starts Cloud Build in the matching environment project
+    And Cloud Build builds and checks both frontend and Python backend images
     Then Cloud Build builds and smoke tests the containers
     And only a successful build of that commit may supply the deployment image digest
     And a failed, cancelled or unfinished build cannot deploy

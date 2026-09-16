@@ -195,6 +195,7 @@ jobs:
           TF_IN_AUTOMATION: 'true'
           TF_VAR_project_id: ${{ steps.target.outputs.project_id }}
           TF_VAR_web_image: ${{ steps.images.outputs.frontend }}
+          TF_VAR_backend_image: ${{ steps.images.outputs.backend }}
           STATE_BUCKET: ${{ steps.target.outputs.state_bucket }}
           STATE_PREFIX: ${{ steps.target.outputs.state_prefix }}
           ENVIRONMENT: ${{ github.ref_name }}
@@ -211,6 +212,7 @@ jobs:
           ENVIRONMENT: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
           EXPECTED_WEB_IMAGE: ${{ steps.images.outputs.frontend }}
+          EXPECTED_BACKEND_IMAGE: ${{ steps.images.outputs.backend }}
         run: python ops/cloud_smoke.py
       - name: Desplegar Airflow según la configuración del entorno
         if: steps.target.outputs.airflow_enabled == 'true'

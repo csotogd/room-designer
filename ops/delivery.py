@@ -68,6 +68,18 @@ def build_image(build, commit, expected_name):
     raise ValueError("Cloud Build no devolvió el digest de la imagen esperada")
 
 
+def check_chat(fetch):
+    health = json.loads(fetch("/designer-healthz"))
+    if not health.get("ok") or not health.get("brain", "").startswith("gemini/"):
+        raise ValueError("El diseñador no está configurado con Gemini")
+    catalog = json.loads(fetch("/catalog/index-polyhaven.json"))
+    if not catalog or health.get("catalog", 0) < 1:
+        raise ValueError("El catálogo del chat está vacío")
+    results = json.loads(fetch("/search?q=chair&limit=1"))
+    if not results.get("results"):
+        raise ValueError("La búsqueda del chat no devuelve productos")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["target", "plan", "release", "smoke", "build"])
@@ -92,9 +104,10 @@ def main():
         check_plan(data)
     elif args.command == "build":
         project, environment = os.environ["PROJECT_ID"], os.environ["ENVIRONMENT"]
-        expected = (f"europe-west1-docker.pkg.dev/{project}/room-designer-{environment}-pipeline/"
-                    f"frontend:{args.commit}-{data['id']}")
-        print("frontend=" + build_image(data, args.commit, expected))
+        for name in ("frontend", "backend"):
+            expected = (f"europe-west1-docker.pkg.dev/{project}/room-designer-{environment}-pipeline/"
+                        f"{name}:{args.commit}-{data['id']}")
+            print(name + "=" + build_image(data, args.commit, expected))
     else:
         check_release(data)
 

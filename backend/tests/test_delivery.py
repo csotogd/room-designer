@@ -196,7 +196,11 @@ def test_cloud_build_is_the_container_quality_gate(delivery):
     config = yaml.safe_load((ROOT / "cloudbuild.yaml").read_text())
     assert {step["id"] for step in config["steps"]} >= {"build-frontend", "smoke-frontend", "build-pipeline", "smoke-pipeline"}
     assert not any(step.get("allowFailure") or step.get("allowExitCodes") for step in config["steps"])
-    assert config["images"] == ["europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/frontend:${_COMMIT_SHA}-$BUILD_ID"]
+    assert config["images"] == [
+        "europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/"
+        + name + ":${_COMMIT_SHA}-$BUILD_ID" for name in ("frontend", "backend")
+    ]
+    assert {step["id"] for step in config["steps"]} >= {"build-backend", "smoke-backend"}
     image = "example.com/frontend:commit"
     result = {"status": "SUCCESS", "substitutions": {"_COMMIT_SHA": "a" * 40},
               "results": {"images": [{"name": image, "digest": "sha256:" + "b" * 64}]}}
@@ -213,6 +217,31 @@ def test_cloud_build_from_another_commit_is_rejected(delivery):
     with pytest.raises(ValueError, match="commit"):
         delivery.build_image({"status": "SUCCESS", "substitutions": {"_COMMIT_SHA": "b" * 40}},
                              "a" * 40, "example.com/frontend:commit")
+
+
+def test_delivery_emits_both_verified_image_digests(delivery, monkeypatch, tmp_path, capsys):
+    commit = "a" * 40
+    prefix = "europe-west1-docker.pkg.dev/designer-dev-123/room-designer-dev-pipeline/"
+    result = {"id": "build-id", "status": "SUCCESS", "substitutions": {"_COMMIT_SHA": commit},
+              "results": {"images": [{"name": prefix + name + ":" + commit + "-build-id",
+                                      "digest": "sha256:" + "b" * 64}
+                                     for name in ("frontend", "backend")]}}
+    path = tmp_path / "build.json"
+    path.write_text(json.dumps(result))
+    monkeypatch.setenv("PROJECT_ID", "designer-dev-123")
+    monkeypatch.setenv("ENVIRONMENT", "dev")
+    monkeypatch.setattr(sys, "argv", ["delivery", "build", str(path), "--commit", commit])
+    delivery.main()
+    assert capsys.readouterr().out.splitlines() == [
+        name + "=" + prefix + name + "@sha256:" + "b" * 64 for name in ("frontend", "backend")
+    ]
+
+
+def test_cloud_backend_digest_is_wired_into_infrastructure():
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    plan = next(s for s in workflow["jobs"]["deploy"]["steps"]
+                if "tofu -chdir=infra/gcp plan" in s.get("run", ""))
+    assert plan["env"]["TF_VAR_backend_image"] == "${{ steps.images.outputs.backend }}"
 
 
 @pytest.mark.parametrize("status", ["failure", "cancelled", "skipped", "success"])
@@ -280,6 +309,31 @@ def verify_private_editor(cloud_smoke, monkeypatch, tmp_path):
 @scenario("The private editor is verified with an audience-bound identity token")
 def test_private_editor_uses_only_its_existing_id_token_permission(verify_private_editor):
     verify_private_editor()
+
+
+def test_live_smoke_checks_python_images_and_chat(cloud_smoke, verify_private_editor, monkeypatch):
+    backend_image = "registry/backend@sha256:" + "c" * 64
+    monkeypatch.setenv("EXPECTED_BACKEND_IMAGE", backend_image)
+    factory = cloud_smoke.GoogleApi
+    checked = []
+
+    def with_backend(token):
+        api = factory(token)
+
+        def request(*args):
+            result = api(*args)
+            if "template" in result:
+                result["template"]["containers"].extend([
+                    {"name": name, "image": backend_image} for name in ("designer", "search")
+                ])
+            return result
+
+        return request
+
+    monkeypatch.setattr(cloud_smoke, "GoogleApi", with_backend)
+    monkeypatch.setattr(cloud_smoke, "check_chat", lambda fetch: checked.append(True), raising=False)
+    verify_private_editor()
+    assert checked == [True]
 
 
 def test_identity_token_is_minted_directly_for_its_audience(cloud_smoke):

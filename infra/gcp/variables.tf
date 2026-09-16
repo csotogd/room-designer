@@ -94,3 +94,40 @@ variable "enable_catalog_runtime" {
     error_message = "Faltan serve-generator y los adaptadores GCS/Firestore/PubSub: el catálogo cloud aún no es desplegable."
   }
 }
+
+variable "chat_enabled" {
+  description = "Activa los contenedores Python de chat y búsqueda tras cargar catálogo y secreto"
+  type        = bool
+  default     = false
+}
+
+variable "backend_image" {
+  description = "Imagen Python probada por CI y fijada por digest"
+  type        = string
+  default     = null
+  validation {
+    condition     = var.backend_image == null ? true : can(regex("@sha256:[a-f0-9]{64}$", var.backend_image))
+    error_message = "El backend debe fijarse por digest SHA256."
+  }
+}
+
+variable "gemini_secret_version" {
+  description = "Versión numérica del secreto Gemini; rotar exige una nueva revisión"
+  type        = string
+  default     = "1"
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.gemini_secret_version))
+    error_message = "Fija una versión numérica del secreto; no uses latest."
+  }
+}
+
+variable "designer_model" {
+  type    = string
+  default = "gemini-3.5-flash"
+}
+
+variable "designer_allowed_origins" {
+  description = "Orígenes HTTPS exactos del editor; localhost sigue permitido para el proxy autenticado"
+  type        = list(string)
+  default     = []
+}

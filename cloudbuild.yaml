@@ -33,19 +33,28 @@ steps:
     name: gcr.io/cloud-builders/docker
     waitFor: ['-']
     args: [build, --platform=linux/amd64, -f, pipeline/Dockerfile, -t, 'room-designer/pipeline:${_COMMIT_SHA}', .]
+  - id: build-backend
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['-']
+    args: [build, --platform=linux/amd64, -f, services/designer/Dockerfile, -t, 'europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/backend:${_COMMIT_SHA}-$BUILD_ID', .]
+  - id: smoke-backend
+    name: gcr.io/cloud-builders/docker
+    waitFor: [build-backend]
+    args: [run, --rm, --network=none, 'europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/backend:${_COMMIT_SHA}-$BUILD_ID', python, -c, 'from room_designer.bootstrap import designer_app, search_app; from room_designer.adapters.cloud_storage import CloudRoomRepository; from room_designer.adapters.adk_runtime import create_model; from room_designer.config import ModelConfig; assert create_model(ModelConfig.from_env({})).model']
   - id: smoke-pipeline
     name: gcr.io/cloud-builders/docker
     waitFor: [build-pipeline]
     args: [run, --rm, --network=none, 'room-designer/pipeline:${_COMMIT_SHA}', ingest, --help]
   - id: stop-frontend
     name: gcr.io/cloud-builders/docker
-    waitFor: [smoke-frontend, smoke-pipeline]
+    waitFor: [smoke-frontend, smoke-pipeline, smoke-backend]
     args: [stop, frontend]
 
 # Cloud Build publica estas imágenes únicamente al finalizar todos los pasos.
 # El catálogo aún no se publica: su runtime cloud no está implementado.
 images:
   - europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/frontend:${_COMMIT_SHA}-$BUILD_ID
+  - europe-west1-docker.pkg.dev/$PROJECT_ID/room-designer-${_ENVIRONMENT}-pipeline/backend:${_COMMIT_SHA}-$BUILD_ID
 options:
   logging: CLOUD_LOGGING_ONLY
 timeout: 1200s

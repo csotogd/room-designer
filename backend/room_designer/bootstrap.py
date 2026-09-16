@@ -9,6 +9,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 from room_designer.adapters.adk_runtime import AdkRuntime, create_model
+from room_designer.adapters.cloud_storage import CloudRoomRepository
 from room_designer.adapters.http import MAX_WS_BYTES, create_designer_app, create_search_app
 from room_designer.adapters.reliability import RateLimiter
 from room_designer.adapters.storage import (
@@ -35,6 +36,19 @@ def catalog_path(env):
     return selected if selected.exists() else directory / "index.json"
 
 
+def room_repository(env, client):
+    project, bucket = env.get("DESIGNER_STATE_PROJECT"), env.get("DESIGNER_STATE_BUCKET")
+    if project or bucket:
+        if not project or not bucket:
+            raise ValueError("DESIGNER_STATE_PROJECT y DESIGNER_STATE_BUCKET deben configurarse juntos")
+        return CloudRoomRepository(client, project, bucket, env.get("DESIGNER_ROOM_ID", "shared"))
+    site = env.get("CATALOG_SITE", "sklum")
+    return FileRoomRepository(
+        Path(env.get("DESIGNER_ROOM_FILE", f"data/designer/room-{site}.json")),
+        int(env.get("DESIGNER_BACKUP_COUNT", "3")),
+    )
+
+
 def designer_app(env=None):
     env = dict(os.environ if env is None else env)
     config, picker_config, judge_config = [
@@ -50,12 +64,8 @@ def designer_app(env=None):
         )
     )
     judge = ConstantJudge() if judge_config.provider == "fake" else AdkJudge(create_model(judge_config))
-    site = env.get("CATALOG_SITE", "sklum")
     session = DesignSession(
-        FileRoomRepository(
-            Path(env.get("DESIGNER_ROOM_FILE", f"data/designer/room-{site}.json")),
-            int(env.get("DESIGNER_BACKUP_COUNT", "3")),
-        ),
+        room_repository(env, client),
         catalog,
         HttpProductSearch(client, env.get("SEARCH_URL", "http://localhost:8787"), catalog),
         picker,
