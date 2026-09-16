@@ -292,11 +292,12 @@
     {
       "id": "RD-013",
       "title": "Desplegar el chat privado en Cloud Run con persistencia cloud",
-      "description": "Autorizado: desplegar chat privado con estado compartido, GCS y Gemini. Implementados snapshots GCS con puntero Firestore condicional, configuración de contenedores Python, rutas same-origin y entrega por digest. Validación local: 251 tests Python, 285 frontend/integración, typecheck, lint, build y 7 pruebas de infraestructura simulada correctos; falta despliegue y prueba cloud real. Secreto dev room-designer-dev-gemini-api-key v1 creado y autenticación comprobada. La primera clave fue revocada tras aparecer en la salida de Google; su sustituta se transfirió sin imprimirla. Bloqueo real: generateContent con gemini-3.5-flash devuelve 429 RESOURCE_EXHAUSTED por saldo prepago agotado; no se ha recargado saldo. Stage/prod sin claves nuevas, pendiente autorización. Catálogo cloud todavía vacío: carga completa intentada sin progreso y cancelada. Chat sigue desactivado y Airflow apagado en todos los entornos. No dar por desplegado; detalle y pendientes en docs/CHAT-CLOUD.md.",
+      "description": "Autorizado: desplegar chat privado con estado compartido, GCS y Gemini. Implementados snapshots GCS con puntero Firestore condicional, configuración de contenedores Python, rutas same-origin y entrega por digest. Validación local: 251 tests Python, 285 frontend/integración, typecheck, lint, build y 7 pruebas de infraestructura simulada correctos; falta despliegue y prueba cloud real. Secreto dev room-designer-dev-gemini-api-key v1 creado y autenticación comprobada. La primera clave fue revocada tras aparecer en la salida de Google; su sustituta se transfirió sin imprimirla. Bloqueo real: generateContent con gemini-3.5-flash devuelve 429 RESOURCE_EXHAUSTED por saldo prepago agotado; no se ha recargado saldo. Ampliación autorizada y completada: claves independientes de Gemini guardadas en stage y prod, versión 1. Verificadas las tres versiones accesibles, valores distintos, restricciones exclusivas a Gemini y autenticación HTTP 200 al listar modelos. No se ha generado contenido en stage/prod ni recargado saldo. Catálogo cloud todavía vacío: carga completa intentada sin progreso y cancelada. Chat sigue desactivado y Airflow apagado en todos los entornos. No dar por desplegado; detalle y pendientes en docs/CHAT-CLOUD.md.",
       "owner": "Codex",
       "status": "progress",
       "priority": "high",
-      "updatedAt": "2026-09-16T00:39:11Z"
+      "updatedAt": "2026-09-16T08:06:01Z",
+      "scopeUpdate": "Tras el bloqueo inicial de seguridad, el usuario autorizó explícitamente renovar el acceso de Cloud Shell. Credenciales de stage/prod creadas y verificadas sin imprimir valores. Documentación actualizada; 251 tests Python, 285 frontend/integración, typecheck y lint correctos. El despliegue general sigue pendiente del saldo y del catálogo; chat y Airflow permanecen desactivados."
     }
   ]
 }

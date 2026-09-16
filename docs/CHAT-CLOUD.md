@@ -18,9 +18,20 @@ había impreso su valor en la salida de creación. La sustituta se transfirió
 directamente de Google a Secret Manager sin imprimirla. Nunca se guardan
 valores de claves en Git ni en el estado de Terraform.
 
-Stage y prod no tienen claves Gemini provisionadas por este cambio. Cada
-entorno debe disponer de su propia clave y de su propio secreto; no copiar
-la clave de dev a los demás proyectos.
+Tras autorización explícita del propietario, los tres entornos tienen claves
+independientes guardadas en Secret Manager:
+
+| Entorno | Proyecto | Secreto | Versión |
+|---|---|---|---|
+| dev | `room-designer-508414` | `room-designer-dev-gemini-api-key` | `1` |
+| stage | `room-designer-stage` | `room-designer-stage-gemini-api-key` | `1` |
+| prod | `room-designer-prod` | `room-designer-prod-gemini-api-key` | `1` |
+
+Verificado el 16 de septiembre de 2026: versiones accesibles, valores distintos,
+restricción exclusiva a `generativelanguage.googleapis.com` y autenticación HTTP
+200 al listar modelos en los tres proyectos. Stage y prod no se han probado
+con generación: esta comprobación no acredita saldo ni capacidad de responder.
+No se ha recargado saldo ni activado el chat. No copiar claves entre entornos.
 
 El bucket de assets de dev estaba vacío. La transferencia del catálogo local
 completo de Poly Haven no progresó y se canceló; **el catálogo no está cargado**.
