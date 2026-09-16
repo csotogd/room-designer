@@ -1,8 +1,8 @@
 import { AgentActivityPanel } from './AgentActivityPanel'
 import { SceneSync } from '../../app/designer/SceneSync'
-import { equal } from '../../app/designer/scene'
+import { equal, sceneFromState } from '../../app/designer/scene'
 import type { DesignerActivity, DesignerActivityProgress, SceneSnapshot } from '../../app/designer/actions'
-import { DesignerClient, type DesignerReply } from '../../app/designer/DesignerClient'
+import { DesignerClient, type DesignerReply, type DesignerProgress } from '../../app/designer/DesignerClient'
 import { stateToActions, type DesignerAction, type DesignerJudgement, type DesignerRoomState, type DesignerScore } from '../../app/designer/actions'
 
 export interface ChatPanelHost {
@@ -30,6 +30,8 @@ export class ChatPanel {
   private restored = false
   private sceneSynced = false
   private applying = false
+  private committedState: DesignerRoomState | null = null
+  private previewing = false
   private activity: AgentActivityPanel | null = null
   private activityRound = 0
   private activityPhase: 'design' | 'judge' = 'design'
@@ -52,6 +54,7 @@ export class ChatPanel {
         }
       },
       onState: (state) => this.syncFromState(state),
+      onProgress: (progress) => this.onProgress(progress),
       onReply: (reply) => this.onReply(reply),
       onActivity: (progress) => this.onActivity(progress),
       onJudgement: (judgement) => this.onJudgement(judgement),
@@ -94,8 +97,11 @@ export class ChatPanel {
         if (conflict) this.setOpen(true)
       },
       saved: (state) => {
+        this.committedState = state
         this.revision = state.revision
-        if (!this.sync.hasPending) this.renderScores(state)
+        if (!this.sync.hasPending) {
+          this.renderScores(state)
+        }
       },
     }, root.defaultView?.sessionStorage, `room-designer:manual:${this.client.endpoint}`)
     root.addEventListener('pointerdown', (event) => {
@@ -191,6 +197,7 @@ export class ChatPanel {
   /** Manual edits invalidate the relationship between server revision and rendered scene. */
   onSceneChanged(): void {
     if (this.applying) return
+    this.previewing = false
     this.sceneSynced = false
     if (this.runId || this.pendingRequest) this.stop('He detenido el ciclo porque has editado la habitación.')
     this.renderScores({ version: 1, room: null, openings: [], items: [] })
@@ -243,8 +250,19 @@ export class ChatPanel {
     }
   }
 
+  private onProgress(progress: DesignerProgress): void {
+    if (progress.requestId !== this.pendingRequest && progress.runId !== this.runId) return
+    this.runId = progress.runId
+    this.previewing = true
+    try {
+      this.reconcileScene(sceneFromState(progress.state))
+      this.addThinking('Actualizando los muebles de la habitación…')
+    } catch (error) { this.stop(`No pude mostrar el progreso: ${String(error)}`) }
+  }
+
   private onReply(reply: DesignerReply): void {
     if (reply.refinement ? reply.runId !== this.runId : reply.requestId !== this.pendingRequest) return
+    this.restorePreview()
     this.finishActivity('Finalizado', reply.activity)
     this.pendingRequest = null
     this.runId = reply.runId
@@ -384,7 +402,15 @@ export class ChatPanel {
     this.addBubble('assistant', reason)
   }
 
+  private restorePreview(): void {
+    if (this.previewing && this.committedState) {
+      this.previewing = false
+      this.reconcileScene(sceneFromState(this.committedState))
+    }
+  }
+
   private clearCycle(): void {
+    this.restorePreview()
     this.finishActivity('Interrumpido')
     ++this.generation
     window.clearTimeout(this.captureTimer)

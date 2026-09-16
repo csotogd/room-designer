@@ -26,3 +26,18 @@ test('solicita progreso y entrega la actividad recibida sin mezclarla con la res
   expect(reply).not.toHaveBeenCalled()
   client.close()
 })
+
+test('solicita la escena provisional y la entrega sin confirmar el turno', () => {
+  vi.stubGlobal('WebSocket', Socket)
+  const progress = vi.fn()
+  const reply = vi.fn()
+  const client = new DesignerClient({ onProgress: progress, onReply: reply, onState: vi.fn(),
+    onJudgement: vi.fn(), onError: vi.fn(), onConnection: vi.fn() }, 'ws://local/ws')
+  const requestId = client.chat('coloca una silla')
+  expect(JSON.parse(Socket.current.send.mock.calls[0]![0])).toMatchObject({ progress: true, requestId })
+  const event = { type: 'design.progress', requestId, runId: 'r', state: { items: [] } }
+  Socket.current.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(event) }))
+  expect(progress).toHaveBeenCalledExactlyOnceWith(event)
+  expect(reply).not.toHaveBeenCalled()
+  client.close()
+})

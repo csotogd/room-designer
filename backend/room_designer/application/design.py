@@ -12,6 +12,7 @@ from uuid import uuid4
 from room_designer.application.activity import ActivitySink, activity_scope
 from room_designer.application.critique import record_verdict
 from room_designer.application.ports import AgentRuntime, ProductPicker, ProductSearch, RoomRepository
+from room_designer.application.progress import publish_scene, scene_progress
 from room_designer.domain.reconciliation import merge_scene, scene_snapshot, validate_scene
 from room_designer.domain.room import Json, RoomEditor, apply_action
 
@@ -40,9 +41,11 @@ class DesignTools:
             try:
                 if self.conversational:
                     raise ValueError("Este turno es conversacional; no admite cambios de escena")
+                before = deepcopy(self.editor.state)
                 value = operation()
                 if hasattr(value, "__await__"):
                     value = await value
+                await publish_scene(before, self.editor.state)
                 return {"status": "success", "action": value}
             except (ValueError, LookupError) as error:
                 return self._reject(intent, str(error))
@@ -295,7 +298,7 @@ class DesignSession:
 
     async def chat(
         self, brief: str, request_id: str, source: str = "user", round: int = 0,
-        on_activity: ActivitySink | None = None,
+        on_progress=None, on_activity: ActivitySink | None = None,
     ) -> Json:
         digest = hashlib.sha256(json.dumps([brief, source, round], ensure_ascii=False).encode()).hexdigest()
         async with self.lock:
@@ -316,7 +319,7 @@ class DesignSession:
 
             # Nothing is persisted if the model, a dependency or a deadline fails midway.
             async with asyncio.timeout(self.timeout):
-                with activity_scope(collect):
+                with activity_scope(collect), scene_progress(state, on_progress):
                     reply = await self.runtime.run(brief, state, tools.functions())
             if tools.rejected:
                 reply += f" ({len(tools.rejected)} propuestas rechazadas; consulta los motivos.)"

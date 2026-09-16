@@ -30,6 +30,7 @@ class Cycle:
     round: int = 0
     revision: str | None = None
     awaiting_capture: bool = False
+    progress: bool = False
     activity: bool = False
 
 
@@ -52,6 +53,7 @@ class DesignWorkflow:
 
     async def start(
         self, owner: str, brief: str, request_id: str, emit: Emit, expected_revision: str | None = None,
+        progress: bool = False,
         *, activity: bool = False,
     ) -> None:
         async with self.control:
@@ -68,7 +70,7 @@ class DesignWorkflow:
                     )
                     return
             await self._stop("Un nuevo encargo ha sustituido el ciclo anterior.")
-            cycle = Cycle(uuid4().hex, owner, brief, emit, activity=activity)
+            cycle = Cycle(uuid4().hex, owner, brief, emit, progress=progress, activity=activity)
             self.cycle = cycle
             self.task = asyncio.create_task(
                 self._run(cycle, request_id, lambda: self._design(cycle, brief, request_id))
@@ -120,7 +122,7 @@ class DesignWorkflow:
             await operation()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
             log.exception("Design cycle failed runId=%s requestId=%s", cycle.id, request_id)
             if self.cycle is cycle:
                 self.cycle = None
@@ -130,13 +132,21 @@ class DesignWorkflow:
                         "type": "error",
                         "requestId": request_id,
                         "runId": cycle.id,
-                        "error": "El ciclo se ha detenido por un error. Revisa los logs y vuelve a intentarlo.",
+                        "error": ("Se ha agotado el tiempo del turno; los cambios provisionales no se han guardado. "
+                                  "La habitación vuelve a su último estado guardado. Puedes volver a intentarlo."
+                                  if isinstance(error, TimeoutError) else
+                                  "El ciclo se ha detenido por un error. Revisa los logs y vuelve a intentarlo."),
                     }
                 )
             except Exception:
                 log.debug("Could not deliver cycle failure", exc_info=True)
 
     async def _design(self, cycle: Cycle, brief: str, request_id: str) -> None:
+        async def report_scene(state):
+            if self.cycle is cycle:
+                await cycle.emit({"type": "design.progress", "runId": cycle.id, "requestId": request_id,
+                                  "state": state})
+
         async def report(entry: Json) -> None:
             if self.cycle is cycle:
                 await cycle.emit({"type": "agent.progress", "requestId": request_id,
@@ -144,6 +154,7 @@ class DesignWorkflow:
 
         result = await self.session.chat(
             brief, request_id, source="judge" if cycle.round else "user", round=cycle.round,
+            on_progress=report_scene if cycle.progress else None,
             on_activity=report if cycle.activity else None,
         )
         cycle.revision = result["state"]["revision"]

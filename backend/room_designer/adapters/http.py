@@ -285,7 +285,7 @@ def create_designer_app(
 
         async def emit(message):
             # Observers get persisted conversation/scores as well as geometry.
-            if "state" in message:
+            if "state" in message and message["type"] != "design.progress":
                 await broadcast_state(socket, message["state"])
             await socket.send_json(message)
 
@@ -325,7 +325,8 @@ def create_designer_app(
                         if revision is not None and not isinstance(revision, str):
                             raise ValueError("revision inválida")
                         await workflow.start(
-                            owner, brief, request_id, emit, revision, activity=message.get("activity") is True
+                            owner, brief, request_id, emit, revision, progress=message.get("progress") is True,
+                            activity=message.get("activity") is True
                         )
                     elif operation == "edit":
                         revision = message.get("baseRevision")

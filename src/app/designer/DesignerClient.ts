@@ -16,7 +16,14 @@ export interface DesignerReply {
   round?: number
 }
 
+export interface DesignerProgress {
+  requestId: string
+  runId: string
+  state: DesignerRoomState
+}
+
 export interface DesignerEvents {
+  onProgress?(progress: DesignerProgress): void
   onActivity?(progress: DesignerActivityProgress): void
   onState(state: DesignerRoomState): void
   onReply(reply: DesignerReply): void
@@ -71,6 +78,7 @@ export class DesignerClient {
         return
       }
       if (message.type === 'state') this.events.onState(message.state as DesignerRoomState)
+      else if (message.type === 'design.progress') this.events.onProgress?.(message as unknown as DesignerProgress)
       else if (message.type === 'agent.progress') this.events.onActivity?.(message as unknown as DesignerActivityProgress)
       else if (message.type === 'reply') this.events.onReply(message as unknown as DesignerReply)
       else if (message.type === 'edit.result' || message.type === 'edit.conflict') this.events.onEdit?.(message as unknown as EditResult)
@@ -91,7 +99,7 @@ export class DesignerClient {
   }
 
   chat(text: string, revision?: string): string {
-    return this.send({ type: 'chat', text, revision, activity: true })
+    return this.send({ type: 'chat', text, revision, progress: true, activity: true })
   }
 
   get endpoint(): string { return this.url }

@@ -17,6 +17,7 @@ def local_configuration(env: dict[str, str]) -> dict[str, str]:
     secret = read_secret(config.get("DESIGNER_GEMINI_SECRET", DEV_SECRET))
     config["GOOGLE_API_KEY"] = secret
     config.setdefault("CATALOG_SITE", "polyhaven")
+    config.setdefault("DESIGNER_TURN_TIMEOUT", "600")
     model = config.get("DESIGNER_MODEL", "gemini-3.5-flash")
     for role in ROLES:
         config[f"{role}_PROVIDER"] = "gemini"

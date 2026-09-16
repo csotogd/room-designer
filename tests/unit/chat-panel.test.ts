@@ -320,3 +320,20 @@ test('shows rotation and completeness grades and marks older ungraded dimensions
   expect(document.querySelector('#chat-scores')!.textContent).toContain('Rotación correcta Sin evaluar')
   expect(document.querySelector('#chat-scores')!.textContent).toContain('Completitud Sin evaluar')
 })
+
+test('restores the committed scene before applying confirmed actions over a preview', async () => {
+  await submit()
+  events().onProgress!({ requestId: 'c1', runId: 'run1', state: { ...state(), items: [
+    { uid: 'preview-chair', productId: 'chair', x: 1, y: 0, z: 1, rotDeg: 0 },
+  ] } })
+  host.snapshot = () => sceneFromState({ ...state(), items: [
+    { uid: "preview-chair", productId: "chair", x: 1, y: 0, z: 1, rotDeg: 0 },
+  ] })
+  vi.mocked(host.reconcile).mockClear()
+  host.apply.mockImplementation(() => {
+    expect(host.reconcile).toHaveBeenCalledWith(sceneFromState(state()))
+    return { applied: 1, skipped: [] }
+  })
+  events().onReply(reply())
+  expect(host.reconcile).toHaveBeenCalledWith(sceneFromState(state()))
+})

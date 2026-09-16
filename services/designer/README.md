@@ -147,7 +147,7 @@ con el servidor: las capturas sin `runId`/`revision` ya no se aceptan.
 |---|---|
 | `DESIGNER_PORT` | 8790 (`PORT` tiene precedencia en contenedores) |
 | `DESIGNER_JUDGE_TARGET` | 7 (media de las seis métricas) |
-| `DESIGNER_TURN_TIMEOUT` | 180 segundos |
+| `DESIGNER_TURN_TIMEOUT` | 180 segundos; 600 con `designer:local` |
 | `DESIGNER_ROOM_FILE` | `data/designer/room-<site>.json` |
 | `DESIGNER_SCREENSHOT_DIR` | `data/designer/screenshots` |
 | `SCREENSHOT_BUCKET` | sin definir: evidencia local |
@@ -239,3 +239,16 @@ mejora. Las llamadas reales utilizan el saldo de Gemini del proyecto.
 
 Referencias: [autenticación de Secret Manager](https://docs.cloud.google.com/secret-manager/docs/authentication)
 y [acceso a versiones](https://docs.cloud.google.com/secret-manager/docs/access-secret-version).
+
+### Progreso visible durante el turno
+
+El navegador solicita `progress: true` y recibe `design.progress` con la escena
+provisional tras cada cambio aceptado. Las copias independientes de los agentes
+se combinan por mueble para conservar el progreso simultáneo. El editor muestra
+colocaciones, movimientos, giros, sustituciones y eliminaciones antes de la respuesta.
+La respuesta final confirma los cambios una sola vez y permite deshacer el turno.
+Si se detiene el turno, se desconecta o falla, vuelve la última escena guardada.
+
+El arranque local concede diez minutos por turno a los proveedores reales.
+`DESIGNER_TURN_TIMEOUT` permite configurar otro límite; si se alcanza, el chat
+explica que no se han guardado los cambios provisionales.

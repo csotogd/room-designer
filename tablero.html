@@ -334,6 +334,15 @@
       "status": "done",
       "priority": "medium",
       "updatedAt": "2026-09-16T11:50:19.566290Z"
+    },
+    {
+      "id": "RD-019",
+      "title": "Mostrar los muebles que el agente coloca en la prueba real",
+      "description": "El usuario indica que el agente dice colocar y girar muebles pero no aparecen en el editor. Comparar estado persistido, acciones y renderizado; reproducir con TDD y corregir la causa sin perder su habitación. Confirmado: los agentes trabajaron en copias provisionales sin publicar muebles y el turno se canceló a los 180 segundos. Se mostrará cada cambio válido durante la ejecución, con conciliación final y restauración explícita al fallar; se ampliará el tiempo local de trabajo. Implementado: vistas provisionales combinadas por mueble después de cada acción, confirmación sin duplicados, restauración al interrumpir, aislamiento de otras pestañas y límite local de 600 s con mensaje claro. TDD observado en rojo y verde. Validado en la versión aislada del cambio: 309 pruebas Python, 232 TypeScript, tipos, lint, build, cobertura 96,49 % líneas y mutación 82,64 %. Prueba con Gemini real: muebles visibles durante el amueblado en ambas zonas y turno activo tras los tres minutos; 12 objetos visibles.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "high",
+      "updatedAt": "2026-09-16T12:11:42.752467Z"
     }
   ]
 }
