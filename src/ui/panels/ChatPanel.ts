@@ -1,10 +1,12 @@
+import { ZonePlanPanel } from './ZonePlanPanel'
 import { SceneSync } from '../../app/designer/SceneSync'
-import { equal } from '../../app/designer/scene'
-import type { SceneSnapshot } from '../../app/designer/actions'
-import { DesignerClient, type DesignerReply } from '../../app/designer/DesignerClient'
+import { equal, sceneFromState } from '../../app/designer/scene'
+import type { DesignerZone, SceneSnapshot } from '../../app/designer/actions'
+import { DesignerClient, type DesignerReply, type DesignerProgress } from '../../app/designer/DesignerClient'
 import { stateToActions, type DesignerAction, type DesignerJudgement, type DesignerRoomState, type DesignerScore } from '../../app/designer/actions'
 
 export interface ChatPanelHost {
+  showZones?(zones: readonly DesignerZone[]): void
   apply(actions: readonly DesignerAction[]): { applied: number; skipped: { reason: string }[] }
   screenshot(): string | Promise<string>
   sceneIsEmpty(): boolean
@@ -14,6 +16,7 @@ export interface ChatPanelHost {
 
 /** User-visible conversation and capture handoff; the server owns the refinement policy. */
 export class ChatPanel {
+  private readonly zones: ZonePlanPanel
   private readonly sync: SceneSync
   private readonly client: DesignerClient
   private readonly messages: HTMLElement
@@ -29,6 +32,8 @@ export class ChatPanel {
   private restored = false
   private sceneSynced = false
   private applying = false
+  private committedState: DesignerRoomState | null = null
+  private previewing = false
 
   constructor(private readonly root: Document, private readonly host: ChatPanelHost) {
     this.messages = root.querySelector<HTMLElement>('#chat-messages')!
@@ -36,6 +41,11 @@ export class ChatPanel {
     this.status = root.querySelector<HTMLElement>('#chat-status')!
     this.scores = root.querySelector<HTMLElement>('#chat-scores')
     this.stopButton = root.querySelector<HTMLButtonElement>('#chat-stop')
+    const zones = root.createElement('section')
+    zones.id = 'chat-zones'
+    zones.hidden = true
+    this.messages.before(zones)
+    this.zones = new ZonePlanPanel(zones)
     this.client = new DesignerClient({
       onConnection: (connected) => {
         this.sync?.connection(connected)
@@ -48,6 +58,7 @@ export class ChatPanel {
         }
       },
       onState: (state) => this.syncFromState(state),
+      onProgress: (progress) => this.onProgress(progress),
       onReply: (reply) => this.onReply(reply),
       onJudgement: (judgement) => this.onJudgement(judgement),
       onEdit: (result) => this.sync.result(result),
@@ -89,8 +100,12 @@ export class ChatPanel {
         if (conflict) this.setOpen(true)
       },
       saved: (state) => {
+        this.committedState = state
         this.revision = state.revision
-        if (!this.sync.hasPending) this.renderScores(state)
+        if (!this.sync.hasPending) {
+          this.renderScores(state)
+          this.renderZones(state)
+        }
       },
     }, root.defaultView?.sessionStorage, `room-designer:manual:${this.client.endpoint}`)
     root.addEventListener('pointerdown', (event) => {
@@ -186,9 +201,11 @@ export class ChatPanel {
   /** Manual edits invalidate the relationship between server revision and rendered scene. */
   onSceneChanged(): void {
     if (this.applying) return
+    this.previewing = false
     this.sceneSynced = false
     if (this.runId || this.pendingRequest) this.stop('He detenido el ciclo porque has editado la habitación.')
     this.renderScores({ version: 1, room: null, openings: [], items: [] })
+    this.renderZones({ version: 1, room: null, openings: [], items: [] })
     this.sync.changed()
   }
 
@@ -233,8 +250,20 @@ export class ChatPanel {
     }
   }
 
+  private onProgress(progress: DesignerProgress): void {
+    if (progress.requestId !== this.pendingRequest && progress.runId !== this.runId) return
+    this.runId = progress.runId
+    this.previewing = true
+    try {
+      this.reconcileScene(sceneFromState(progress.state))
+      this.renderZones(progress.state)
+      this.addThinking(`Amueblando ${progress.state.zones?.length ?? 0} zonas en paralelo…`)
+    } catch (error) { this.stop(`No pude mostrar las zonas: ${String(error)}`) }
+  }
+
   private onReply(reply: DesignerReply): void {
     if (reply.refinement ? reply.runId !== this.runId : reply.requestId !== this.pendingRequest) return
+    this.previewing = false
     this.pendingRequest = null
     this.runId = reply.runId
     this.removeThinking()
@@ -320,6 +349,11 @@ export class ChatPanel {
     else this.clearCycle()
   }
 
+  private renderZones(state: DesignerRoomState): void {
+    this.zones.render(state)
+    this.host.showZones?.(state.zones ?? [])
+  }
+
   private renderScores(state: DesignerRoomState): void {
     if (!this.scores) return
     this.scores.hidden = false
@@ -373,6 +407,11 @@ export class ChatPanel {
   }
 
   private clearCycle(): void {
+    if (this.previewing && this.committedState) {
+      this.previewing = false
+      this.reconcileScene(sceneFromState(this.committedState))
+      this.renderZones(this.committedState)
+    }
     ++this.generation
     window.clearTimeout(this.captureTimer)
     this.runId = null

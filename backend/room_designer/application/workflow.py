@@ -29,6 +29,7 @@ class Cycle:
     round: int = 0
     revision: str | None = None
     awaiting_capture: bool = False
+    progress: bool = False
 
 
 class DesignWorkflow:
@@ -49,7 +50,8 @@ class DesignWorkflow:
         self.control = asyncio.Lock()
 
     async def start(
-        self, owner: str, brief: str, request_id: str, emit: Emit, expected_revision: str | None = None
+        self, owner: str, brief: str, request_id: str, emit: Emit, expected_revision: str | None = None,
+        progress: bool = False,
     ) -> None:
         async with self.control:
             if expected_revision is not None:
@@ -65,7 +67,7 @@ class DesignWorkflow:
                     )
                     return
             await self._stop("Un nuevo encargo ha sustituido el ciclo anterior.")
-            cycle = Cycle(uuid4().hex, owner, brief, emit)
+            cycle = Cycle(uuid4().hex, owner, brief, emit, progress=progress)
             self.cycle = cycle
             self.task = asyncio.create_task(
                 self._run(cycle, request_id, lambda: self._design(cycle, brief, request_id))
@@ -134,8 +136,13 @@ class DesignWorkflow:
                 log.debug("Could not deliver cycle failure", exc_info=True)
 
     async def _design(self, cycle: Cycle, brief: str, request_id: str) -> None:
+        async def report(state):
+            await cycle.emit({"type": "design.progress", "runId": cycle.id, "requestId": request_id,
+                              "state": state})
+
         result = await self.session.chat(
-            brief, request_id, source="judge" if cycle.round else "user", round=cycle.round
+            brief, request_id, source="judge" if cycle.round else "user", round=cycle.round,
+            on_progress=report if cycle.progress else None,
         )
         cycle.revision = result["state"]["revision"]
         cycle.awaiting_capture = not result.get("conversational", False)

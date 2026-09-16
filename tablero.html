@@ -307,6 +307,15 @@
       "status": "done",
       "priority": "high",
       "updatedAt": "2026-09-16T10:09:20.960682+00:00"
+    },
+    {
+      "id": "RD-015",
+      "title": "Zonificar la habitación antes de amueblar por áreas",
+      "description": "Crear una fase de agente para proponer zonas funcionales según la conversación, representarlas gráficamente en el plano y amueblarlas secuencialmente con límites independientes. Conservar el estado, evitar invasiones entre zonas y validar mediante Gherkin, TDD y puertas de calidad. Trabajo iniciado; implementación y validación pendientes.\nAclaración del usuario: las zonas deben dibujarse con líneas discontinuas y nombres sobre la habitación 3D. Amueblado obligatorio, automático y paralelo por agentes independientes; eliminar los botones de inicio manual. Se adapta el alcance, los escenarios y las pruebas antes de implementar.\nImplementado: límites discontinuos legibles y nombres sobre el suelo 3D, amueblado automático obligatorio y paralelo por zona, progreso antes de terminar, guardas geométricas, cancelación y restauración del estado. Eliminados los botones de amueblado. Verificado visualmente en la app. Entrega aislada en codex/zonas-3d-paralelas para conservar los cambios concurrentes. Validación: 284 pruebas Python y 207 frontend/integración, typecheck, Ruff, build y cobertura correctos (96,49 % líneas). Una espera de integración agotada durante el arranque pasó al repetir sin modificar pruebas. Pendiente: terminar Stryker, commit y push solicitados.\nResultado final: zonificación y amueblado automático paralelo completados; límites y nombres comprobados sobre la escena 3D. TDD y refactor completados. Puertas de la entrega aislada en verde: 284 pruebas Python, 207 frontend/integración, typecheck, Ruff, build, cobertura de líneas 96,49 % y mutación 81,14 % (umbral 75 %, 1.861 mutantes). Proveedores simulados, sin llamadas de pago. Alcance: habitación y zonas rectangulares; persistencia de las zonas en el servicio. Entrega en la rama codex/zonas-3d-paralelas; cambios concurrentes conservados fuera de esta entrega.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "high",
+      "updatedAt": "2026-09-16T10:44:45.118347+00:00"
     }
   ]
 }

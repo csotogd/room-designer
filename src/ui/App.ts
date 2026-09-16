@@ -1,3 +1,4 @@
+import type { DesignerZone } from '../app/designer/actions'
 import { Project } from '../core/model/Project'
 import { FloorPlan } from '../core/model/FloorPlan'
 import type { LightPoint } from '../core/model/LightPoint'
@@ -37,6 +38,7 @@ export class App {
   private readonly stack = new CommandStack()
   private readonly catalog: FurnitureCatalog
   private readonly view3d: View3D
+  private zones: readonly DesignerZone[] = []
   private view2d: View2D | null = null
   private readonly catalogPanel: CatalogPanel
   private readonly cartPanel: CartPanel
@@ -78,6 +80,11 @@ export class App {
     )
     this.cartPanel = new CartPanel(root, this.project)
     this.chatPanel = new ChatPanel(root, {
+      showZones: (zones) => {
+        this.zones = zones
+        this.view2d?.setZones(zones)
+        this.view3d.setZones(zones)
+      },
       apply: (actions) => {
         const report = applyDesignerActions(
           {
@@ -379,6 +386,7 @@ export class App {
   private ensureView2D(): void {
     if (this.view2d) return
     this.view2d = new View2D(this.el<HTMLCanvasElement>('#canvas2d'), this.project)
+    this.view2d.setZones(this.zones)
     this.view2d.setTool(new SelectTool(this.toolContext()))
   }
 
@@ -432,6 +440,7 @@ export class App {
     this.stack.clear()
     this.view3dSelect(null)
     this.view3d.setProject(project)
+    this.zones = []
     this.view2d?.setProject(project)
     this.cartPanel.setProject(project)
     this.el<HTMLInputElement>('#time-slider').value = String(project.timeOfDay)

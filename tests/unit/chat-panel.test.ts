@@ -285,3 +285,18 @@ describe('ChatPanel judge-agent handoff', () => {
     expect(host.apply).not.toHaveBeenCalled()
   })
 })
+
+test('shows automatic parallel work before the reply and restores saved zones on stop', async () => {
+  const showZones = vi.fn()
+  Object.assign(host, { showZones })
+  await submit()
+  const zones = [{ id: 'study', name: 'Estudio', x: 0, z: 0, w: 2, d: 4 }]
+  events().onProgress?.({ requestId: 'c1', runId: 'parallel', state: { ...state(), zones,
+    zoneResults: { study: { status: 'furnishing', reply: 'Amueblando…' } } } })
+  expect(showZones).toHaveBeenLastCalledWith(zones)
+  expect(text()).toContain('en paralelo')
+  expect(document.querySelector('#chat-zones button')).toBeNull()
+  events().onStopped?.('parallel', 'Detenido por ti.')
+  expect(showZones).toHaveBeenLastCalledWith([])
+  expect(document.querySelector<HTMLElement>('#chat-zones')!.hidden).toBe(true)
+})

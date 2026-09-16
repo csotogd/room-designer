@@ -25,11 +25,22 @@ class FurnitureChange(TypedDict):
     search_query: NotRequired[str]
 
 
+class FunctionalZone(TypedDict):
+    id: str
+    name: str
+    x: float
+    z: float
+    w: float
+    d: float
+
+
 class DesignTools:
     def __init__(self, editor: RoomEditor, search: ProductSearch, picker: ProductPicker, brief: str):
         self.editor, self.search, self.picker, self.brief = editor, search, picker, brief
         self.rejected: list[Json] = []
         self.conversational = False
+        self.runtime: AgentRuntime | None = None
+        self.on_progress = None
         self.initial_action_count = len(editor.actions)
         # ADK may execute multiple function calls concurrently. A turn has one mutation order.
         self.lock = asyncio.Lock()
@@ -66,6 +77,8 @@ class DesignTools:
         """Read the current room and furniture identifiers, including changes made during this turn."""
         return {
             **{k: deepcopy(self.editor.state[k]) for k in ("room", "openings", "items")},
+            "zones": deepcopy(self.editor.state.get("zones", [])),
+            "activeZone": deepcopy(self.editor.active_zone),
             "environment": deepcopy(self.editor.state.get("environment", {})),
         }
 
@@ -212,8 +225,63 @@ class DesignTools:
             results.append(await operation(**arguments))
         return {"results": results}
 
+    async def set_zones(self, zones: list[FunctionalZone]) -> dict:
+        """Distribuye los usos antes de amueblar. Cada zona: id, name, x, z, w, d en metros.
+
+        Zonas rectangulares sin solapes dentro del plano. Nombres y tamaños según el encargo,
+        luz, puertas, circulación y muebles existentes; no hay un reparto fijo predefinido.
+        Puede quedar espacio libre para circulación. Consulta los rechazos antes de continuar.
+        """
+        return await self._perform({"kind": "setZones"}, lambda: self.editor.set_zones(zones))
+
+    async def furnish_zones(self, zone_ids: list[str], brief: str) -> dict:
+        """Encarga en paralelo el amueblado independiente de las zonas indicadas.
+
+        Requiere set_zones previo. Cada agente recibe el encargo, una zona y el estado compartido.
+        Indica solo los ids solicitados por el usuario; para toda la habitación incluye todos.
+        También se usa para mover, sustituir o quitar muebles y aplicar correcciones del juez.
+        """
+        async def apply():
+            zones = {z["id"]: z for z in self.editor.state.get("zones", [])}
+            if not zone_ids or len(set(zone_ids)) != len(zone_ids) or any(z not in zones for z in zone_ids):
+                raise ValueError("Selecciona zonas existentes sin duplicados")
+            if self.runtime is None or self.editor.active_zone:
+                raise ValueError("No hay coordinador disponible")
+            results = dict(self.editor.state.get("zoneResults", {}))
+            if self.on_progress:
+                await self.on_progress({**deepcopy(self.editor.state), "zoneResults": {
+                    **results, **{uid: {"status": "furnishing", "reply": "Amueblando…"} for uid in zone_ids}
+                }})
+
+            async def furnish(zone):
+                staged = RoomEditor(self.editor.state, self.editor.catalog, self.editor.request_id, self.editor.at)
+                staged.active_zone = zone
+                tools = DesignTools(staged, self.search, self.picker, brief)
+                reply = await self.runtime.run(brief, {**deepcopy(staged.state), "activeZone": zone}, tools.functions())
+                return staged.actions, tools.rejected, reply
+
+            tasks = [asyncio.create_task(furnish(zones[uid])) for uid in zone_ids]
+            try:
+                completed = await asyncio.gather(*tasks)
+            except BaseException:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
+            for zone_id, (actions, rejected, reply) in zip(zone_ids, completed, strict=True):
+                for action in actions:
+                    self.editor.apply(action)
+                self.rejected.extend(rejected)
+                results[zone_id] = {"status": "review" if rejected else "ready", "reply": reply}
+            self.editor.apply({"kind": "setZoneResults", "zoneResults": results})
+            return results
+
+        return await self._perform({"kind": "furnishZones", "zoneIds": zone_ids}, apply)
+
     def functions(self) -> list:
         return [
+            self.set_zones,
+            self.furnish_zones,
             self.apply_furniture_changes,
             self.respond_conversationally,
             self.get_room,
@@ -292,7 +360,10 @@ class DesignSession:
                 "changed": changed,
             }
 
-    async def chat(self, brief: str, request_id: str, source: str = "user", round: int = 0) -> Json:
+    async def chat(
+        self, brief: str, request_id: str, source: str = "user", round: int = 0,
+        on_progress=None,
+    ) -> Json:
         digest = hashlib.sha256(json.dumps([brief, source, round], ensure_ascii=False).encode()).hexdigest()
         async with self.lock:
             state = await self.repository.load()
@@ -303,9 +374,19 @@ class DesignSession:
                 return {**receipt["response"], "state": state, "duplicate": True}
             editor = RoomEditor(state, self.catalog, request_id, datetime.now(timezone.utc).isoformat())
             tools = DesignTools(editor, self.search, self.picker, brief)
+            tools.runtime = self.runtime
+            tools.on_progress = on_progress
             # Nothing is persisted if the model, a dependency or a deadline fails midway.
             async with asyncio.timeout(self.timeout):
                 reply = await self.runtime.run(brief, state, tools.functions())
+                zoning_actions = [a for a in editor.actions if a["kind"] in ("setZones", "setZoneResults")]
+                if zoning_actions and zoning_actions[-1]["kind"] == "setZones":
+                    result = await tools.furnish_zones([z["id"] for z in editor.state["zones"]], brief)
+                    if result["status"] == "success":
+                        reply += "\n" + "\n".join(
+                            f"{zone['name']}: {result['action'][zone['id']]['reply']}"
+                            for zone in editor.state["zones"]
+                        )
             if tools.rejected:
                 reply += f" ({len(tools.rejected)} propuestas rechazadas; consulta los motivos.)"
             editor.state["conversation"] = (
@@ -319,9 +400,10 @@ class DesignSession:
             # Una conversación sin cambios conserva la evaluación de la escena.
             if not tools.conversational:
                 editor.state.pop("verdict", None)
+            scene_actions = [a for a in editor.actions if a["kind"] not in ("setZones", "setZoneResults")]
             response = {
                 "reply": reply,
-                "actions": editor.actions,
+                "actions": scene_actions,
                 "rejected": tools.rejected,
                 "conversational": tools.conversational,
             }

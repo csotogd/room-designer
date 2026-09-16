@@ -324,7 +324,7 @@ def create_designer_app(
                         revision = message.get("revision")
                         if revision is not None and not isinstance(revision, str):
                             raise ValueError("revision inválida")
-                        await workflow.start(owner, brief, request_id, emit, revision)
+                        await workflow.start(owner, brief, request_id, emit, revision, progress=message.get("progress") is True)
                     elif operation == "edit":
                         revision = message.get("baseRevision")
                         if revision is not None and not isinstance(revision, str):

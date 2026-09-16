@@ -47,7 +47,7 @@ después de haber ejecutado modificaciones.
 Este contrato funciona en el servicio WebSocket Python existente. No implica
 un despliegue nuevo en Cloud Run ni la activación de credenciales de Gemini.
 
-Las diez tools son `get_room`, `search_catalog`, `set_room`, `add_opening`,
+Las herramientas base incluyen `get_room`, `search_catalog`, `set_room`, `add_opening`,
 `clear_openings`, `place_furniture`, `replace_furniture`, `move_furniture`,
 `rotate_furniture`, `remove_furniture`. Colocar/reemplazar incluye búsqueda,
 selección visual y guardrails. Los cambios se preparan en una copia; sólo se
@@ -159,3 +159,46 @@ Los tests ejecutan las tools reales de ADK sin llamadas facturables. La
 integración de los tres proveedores se verifica con respuestas remotas
 simuladas. Para activar una conexión real configura la clave correspondiente
 en `.env` y reinicia el servicio.
+
+## Distribución por zonas
+
+En una habitación nueva, el coordinador dispone de `set_zones` para distribuir
+los usos antes de colocar muebles. Los nombres, cantidad y tamaños dependen del
+encargo; no se impone una lista de dormitorio/estudio/vestidor. Cada zona incluye
+`id`, `name`, `x`, `z`, `w`, `d`, en coordenadas globales y metros. Se admiten de
+1 a 12 rectángulos sin solapes dentro de la habitación rectangular que soporta
+el servicio. Puede quedar superficie libre para circulación. Los muebles
+existentes deben caber completos en alguna zona al redistribuir.
+
+Al terminar la planificación, el servicio inicia obligatoriamente el amueblado
+de todas las zonas nuevas, sin confirmación ni botones. Cada zona tiene un turno
+de agente independiente y todos se ejecutan en paralelo sobre copias de la misma
+escena. Cada agente recibe su `activeZone` y el contexto global. Solo dispone de
+herramientas de muebles y consulta; no puede redistribuir el plano ni lanzar otros
+agentes. La reparación geométrica también respeta el perímetro de la zona. Mover
+o quitar muebles de otra zona se rechaza, incluidos los muebles apoyados afectados.
+Las ediciones posteriores usan `furnish_zones(zone_ids, brief)` para seleccionar
+las zonas afectadas, también en paralelo.
+
+Los clientes que envían `progress: true` con `chat` reciben `design.progress`
+con `requestId`, `runId` y el estado provisional antes de comenzar el amueblado.
+El editor dibuja entonces líneas discontinuas y nombres sobre el suelo de la
+habitación 3D; el plano 2D conserva el mismo reparto. El chat solo informa del
+estado de los trabajos. Las anotaciones se ocultan en la captura enviada al juez.
+El juez evalúa el conjunto una vez reunidos todos los resultados.
+
+Las zonas y los resultados por zona se guardan en `state.zones` y
+`state.zoneResults`, con acciones reproducibles en el log. Se restauran por el
+WebSocket. Un cambio de habitación o aperturas invalida el reparto; una edición
+de muebles lo conserva. Los archivos previos sin zonas siguen siendo legibles y
+sus muebles pueden editarse. La exportación local de proyecto no incluye esta
+metainformación del asistente: la persistencia del reparto pertenece al servicio.
+
+Si falla un proveedor o se cancela el turno, se cancelan los agentes restantes y
+no se guardan muebles parciales. El navegador retira la previsualización y vuelve
+al estado confirmado. Los clientes anteriores que no solicitan progreso siguen
+recibiendo la respuesta final habitual.
+
+Las pruebas usan proveedores simulados y el bucle real de ADK sin llamadas de
+pago. El modo offline sigue siendo una demostración determinista de herramientas,
+no un planificador semántico equivalente al modelo configurado en producción.

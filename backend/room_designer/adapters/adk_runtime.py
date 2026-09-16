@@ -100,10 +100,42 @@ class AdkRuntime:
         self.model = model
 
     async def run(self, brief: str, state: Json, tools: list) -> str:
-        context = {k: state.get(k, []) for k in ("room", "openings", "items", "environment", "conversation")}
+        context = {k: state.get(k, []) for k in (
+            "room", "openings", "items", "environment", "conversation", "zones", "activeZone", "zoneResults"
+        )}
+        planning = {"set_zones", "furnish_zones", "set_room", "add_opening", "clear_openings"}
+        instruction = INSTRUCTION
+        if state.get("activeZone"):
+            tools = [t for t in tools if t.__name__ not in planning]
+            instruction += """
+Eres el agente de amueblado de activeZone. Trabaja exclusivamente en esa zona.
+Usa su nombre y el encargo para decidir qué muebles necesita. Las coordenadas son globales.
+Consulta toda la escena para mantener coherencia y circulación, pero no toques otras zonas.
+Tu respuesta debe identificar los cambios realizados y cualquier limitación de esta zona.
+"""
+        elif state.get("zones") or not state.get("items"):
+            tools = [t for t in tools if t.__name__ in planning | {
+                "get_room", "search_catalog", "respond_conversationally"
+            }]
+            if not state.get("zones"):
+                tools = [t for t in tools if t.__name__ != "furnish_zones"]
+            instruction += """
+Eres el agente de distribución y coordinación. Antes de amueblar debes llamar set_zones.
+Estudia el encargo, dimensiones, aperturas, luz y circulación; elige los usos, número y tamaños
+que encajen. Nunca impongas estudio/cama/vestidor si el usuario no los necesita.
+Las zonas son áreas funcionales rectangulares, no tabiques. Puedes dejar pasos libres.
+Guarda las zonas con set_zones y explica el reparto. El servicio inicia automáticamente
+el amueblado de todas ellas con agentes independientes en paralelo al terminar tu planificación.
+No pidas confirmación ni que el usuario pulse un botón. No llames furnish_zones tras set_zones.
+Los resultados del amueblado se adjuntan automáticamente a tu respuesta.
+Para modificar zonas ya amuebladas usa furnish_zones; también ejecuta las zonas en paralelo.
+Si ya hay zonas, consérvalas salvo petición de redistribuir. Para una petición sobre una zona,
+llama furnish_zones solo para ella. Para correcciones del juez selecciona las zonas afectadas.
+Resume los resultados reales de cada zona y los rechazos, sin afirmar éxito donde no lo hubo.
+"""
         return await run_agent(
             self.model,
-            INSTRUCTION,
+            instruction,
             [types.Part(text=json.dumps({"brief": brief, "state": context}, ensure_ascii=False))],
             tools,
         )
@@ -157,10 +189,32 @@ class OfflineModel(BaseLlm):
                 ("add_opening", {"wall": "S", "kind": "door", "offset": 0.3, "width": 0.9}),
             ]
 
+        if not state.get("activeZone") and (state.get("zones") or not state.get("items")):
+            zones = state.get("zones") or [{
+                "id": "main", "name": "Trabajo" if re.search(r"oficina|office|escritorio|desk", brief, re.I)
+                else "Descanso" if re.search(r"dormitorio|bedroom|cama|bed", brief, re.I) else "Espacio principal",
+                "x": 0, "z": 0, "w": room["w"], "d": room["d"],
+            }]
+            if not state.get("zones"):
+                plan.append(("set_zones", {"zones": zones}))
+                return plan
+            selected = re.search(r"\(id:\s*([^)]*)\)", brief)
+            zone_ids = [selected[1].strip()] if selected else [z["id"] for z in zones]
+            plan.append(("furnish_zones", {"zone_ids": zone_ids, "brief": brief}))
+            return plan
+
+        zone = state.get("activeZone")
+        if zone:
+            room = zone
+            if re.search(r"amuebla|furnish", brief, re.I):
+                brief += " " + zone["name"]
+
         def place(query, x, z, rotation=0):
+            x += zone["x"] if zone else 0
+            z += zone["z"] if zone else 0
             plan.append(("place_furniture", {"search_query": query, "x": x, "z": z, "rotation": rotation}))
 
-        if re.search(r"oficina|office|escritorio|desk", brief, re.I):
+        if re.search(r"oficina|office|escritorio|desk|estudio|study|trabajo", brief, re.I):
             match = re.search(r"(?:para|for)\s+(\d+)|(\d+)\s+(?:puestos|personas|people)", brief, re.I)
             seats = max(1, min(8, int(next(g for g in match.groups() if g)) if match else 2))
             for index in range(seats):
@@ -169,7 +223,7 @@ class OfflineModel(BaseLlm):
                 place("office chair", x, 2.2, 180)
             place("bookshelf shelves storage", 0.4, room["d"] / 2, 90)
             place("potted plant", room["w"] - 0.4, room["d"] - 0.5)
-        elif re.search(r"dormitorio|bedroom|cama|bed", brief, re.I):
+        elif re.search(r"dormitorio|bedroom|cama|bed|descanso", brief, re.I):
             place("bed frame", room["w"] / 2, 1.2)
             place("nightstand bedside table", room["w"] / 2 - 1.4, 0.5)
         elif match := re.search(r"(?:añade|add|pon|coloca)\s+(?:una?\s+)?(.{3,80})", brief, re.I):

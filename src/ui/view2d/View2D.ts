@@ -1,3 +1,5 @@
+import type { DesignerZone } from '../../app/designer/actions'
+import { ZONE_COLORS } from '../panels/ZonePlanPanel'
 import { Point2D } from '../../core/geometry/Point2D'
 import type { Project } from '../../core/model/Project'
 import type { Selection, Tool2D } from '../types'
@@ -12,6 +14,7 @@ const SELECTED = '#0058a3'
  */
 export class View2D {
   private readonly ctx: CanvasRenderingContext2D
+  private zones: readonly DesignerZone[] = []
   private scale = 80
   private offsetX = 120
   private offsetY = 100
@@ -33,7 +36,13 @@ export class View2D {
   setProject(project: Project): void {
     this.unsubscribe?.()
     this.project = project
+    this.zones = []
     this.subscribe()
+    this.draw()
+  }
+
+  setZones(zones: readonly DesignerZone[]): void {
+    this.zones = zones
     this.draw()
   }
 
@@ -77,10 +86,31 @@ export class View2D {
     ctx.clearRect(0, 0, w, h)
     this.drawGrid(w, h)
     this.drawFloor()
+    this.drawZones()
     for (const wall of this.project.floorPlan.walls) this.drawWall(wall)
     this.drawFurniture()
     this.drawLights()
     this.tool?.drawOverlay(ctx, this.toScreen, this.scale)
+  }
+
+  private drawZones(): void {
+    if (!this.zones.length) return
+    const ctx = this.ctx
+    ctx.save()
+    for (const [index, zone] of this.zones.entries()) {
+      const [x, y] = this.toScreen(new Point2D(zone.x, zone.z))
+      const color = ZONE_COLORS[index % ZONE_COLORS.length]!
+      ctx.fillStyle = color + '30'
+      ctx.fillRect(x, y, zone.w * this.scale, zone.d * this.scale)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([6, 4])
+      ctx.strokeRect(x, y, zone.w * this.scale, zone.d * this.scale)
+      ctx.fillStyle = color
+      ctx.font = '600 12px sans-serif'
+      ctx.fillText(zone.name, x + 8, y + 18)
+    }
+    ctx.restore()
   }
 
   private drawGrid(w: number, h: number): void {

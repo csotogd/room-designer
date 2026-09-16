@@ -80,3 +80,21 @@ Sobre la app servida con `npm run dev` (http://localhost:5173).
 23. Crear o cargar un plano en L e intentar enviar un encargo. **Esperado:**
     se explica el requisito de plano rectangular y se conserva el plano
     manual; no se envía al agente una geometría diferente.
+
+## Zonificación conversacional
+
+- Con el servicio conectado y una habitación rectangular, pedir un espacio con
+  varios usos. Verificar líneas discontinuas legibles y nombres directamente
+  sobre el suelo 3D, también al orbitar y acercar. No son tabiques físicos.
+- Las zonas aparecen antes de terminar el amueblado. Los agentes arrancan
+  automáticamente en paralelo sin botones «Amueblar» ni otro mensaje del usuario.
+  El chat informa del estado de cada zona; el juez actúa después del conjunto.
+- Comprobar que cada mueble permanece dentro de su zona y que pedir cambios en
+  una zona conserva las demás. Un mueble que no cabe se rechaza; no se coloca
+  en la zona vecina. También se protegen los muebles apoyados.
+- Recargar: se recuperan reparto y resultados del servicio. Cambiar dimensiones
+  o aperturas: desaparece el reparto anterior y puede regenerarse.
+- Detener o desconectar durante el trabajo: se cancelan todos los agentes y
+  vuelve la distribución confirmada, sin muebles de un turno incompleto.
+- Alcance actual: habitación y zonas rectangulares; ejecución paralela. El
+  guardado local de proyecto no sustituye la persistencia de zonas del servicio.
