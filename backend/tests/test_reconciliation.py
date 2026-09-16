@@ -32,7 +32,7 @@ async def initial(session):
 async def test_mouse_move_is_persisted_invalidates_grade_and_enters_agent_context(session):
     base = await initial(session)
     await session.record_verdict(
-        dict(cohesion=7, colors=7, style=7, adherence=7, overall=7, notes="bien"), "j1", "oficina"
+        dict(cohesion=7, colors=7, style=7, adherence=7, rotation=7, completeness=7, overall=7, notes="bien"), "j1", "oficina"
     )
     desired = deepcopy(base)
     desired["items"][0].update(x=2.25, z=2.8, rotDeg=45)

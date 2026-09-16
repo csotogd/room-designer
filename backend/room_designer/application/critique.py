@@ -5,8 +5,15 @@ from dataclasses import dataclass
 
 from room_designer.domain.room import Json
 
-DIMENSIONS = ("cohesion", "colors", "style", "adherence")
-DIMENSION_LABELS = {"cohesion": "cohesión", "colors": "colores", "style": "estilo", "adherence": "brief"}
+DIMENSION_LABELS = {
+    "cohesion": "cohesión",
+    "colors": "colores",
+    "style": "estilo",
+    "adherence": "brief",
+    "rotation": "rotación correcta",
+    "completeness": "completitud",
+}
+DIMENSIONS = tuple(DIMENSION_LABELS)
 
 
 def validate_target(target: float) -> None:
@@ -15,7 +22,7 @@ def validate_target(target: float) -> None:
 
 
 def mean_score(verdict: Json) -> float:
-    """Use all four rubric metrics; the model's subjective overall is informational."""
+    """La media pondera por igual las seis dimensiones; overall es informativo."""
     scores = [verdict[k] for k in DIMENSIONS]
     if any(
         isinstance(s, bool) or not isinstance(s, (int, float)) or not math.isfinite(s) or not 1 <= s <= 10
@@ -42,6 +49,7 @@ def record_verdict(
     round: int = 0,
     target: float = 7,
     evidence: str = "",
+    activity: list[Json] | None = None,
 ) -> Json:
     entry = {
         **verdict,
@@ -59,7 +67,7 @@ def record_verdict(
     state["verdicts"] = (state.get("verdicts", []) + [entry])[-20:]
     state["conversation"] = (
         state.get("conversation", [])
-        + [{"role": "judge", "text": verdict_text(verdict, entry["mean"]), "round": round}]
+        + [{"role": "judge", "text": verdict_text(verdict, entry["mean"]), "round": round, "activity": activity or []}]
     )[-40:]
     return entry
 

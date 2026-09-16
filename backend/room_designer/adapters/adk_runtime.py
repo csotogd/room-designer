@@ -8,12 +8,14 @@ from uuid import uuid4
 from google.adk.agents import LlmAgent
 from google.adk.agents.run_config import RunConfig
 from google.adk.models.base_llm import BaseLlm
+from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from room_designer.application.activity import agent_scope, current_agent, publish_activity
 from room_designer.config import ModelConfig
 from room_designer.domain.room import Json
 
@@ -67,16 +69,22 @@ def create_model(config: ModelConfig) -> BaseLlm:
 
 
 async def run_agent(
-    model: BaseLlm, instruction: str, parts: list[types.Part], tools: list, max_calls: int = 40
+    model: BaseLlm, instruction: str, parts: list[types.Part], tools: list, max_calls: int = 40,
 ) -> str:
     sessions = InMemorySessionService()
     session = await sessions.create_session(app_name="room_designer", user_id="room", session_id=uuid4().hex)
     runner = Runner(
-        agent=LlmAgent(name="designer", model=model, instruction=instruction, tools=tools),
+        agent=LlmAgent(
+            name="designer", model=model, instruction=instruction, tools=tools,
+            generate_content_config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(include_thoughts=True)
+            ) if isinstance(model, Gemini) else None,
+        ),
         app_name="room_designer",
         session_service=sessions,
     )
     final = ""
+    agent_label = current_agent()
     try:
         async for event in runner.run_async(
             user_id="room",
@@ -86,6 +94,17 @@ async def run_agent(
         ):
             if event.error_code:
                 raise RuntimeError(f"ADK: {event.error_code}")
+            for part in event.content.parts or [] if event.content else []:
+                if part.thought and part.text:
+                    await publish_activity({"kind": "thinking", "agent": agent_label, "text": part.text})
+                elif part.function_call:
+                    call = part.function_call
+                    await publish_activity({"kind": "tool_call", "agent": agent_label,
+                                            "tool": call.name, "data": call.args or {}})
+                elif part.function_response:
+                    response = part.function_response
+                    await publish_activity({"kind": "tool_result", "agent": agent_label,
+                                            "tool": response.name, "data": response.response})
             if event.is_final_response() and event.content:
                 final = "".join(p.text or "" for p in event.content.parts or [] if not p.thought)
         if not final.strip():
@@ -101,12 +120,14 @@ class AdkRuntime:
 
     async def run(self, brief: str, state: Json, tools: list) -> str:
         context = {k: state.get(k, []) for k in ("room", "openings", "items", "environment", "conversation")}
-        return await run_agent(
-            self.model,
-            INSTRUCTION,
-            [types.Part(text=json.dumps({"brief": brief, "state": context}, ensure_ascii=False))],
-            tools,
-        )
+        label = f"Agente · {state['activeZone']['name']}" if state.get("activeZone") else "Diseñador"
+        with agent_scope(label):
+            return await run_agent(
+                self.model,
+                INSTRUCTION,
+                [types.Part(text=json.dumps({"brief": brief, "state": context}, ensure_ascii=False))],
+                tools,
+            )
 
 
 class OfflineModel(BaseLlm):

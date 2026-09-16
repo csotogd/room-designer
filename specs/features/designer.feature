@@ -53,7 +53,7 @@ Feature: Conversational room designer
   Scenario: The judge scores the rubric dimensions from a screenshot
     Given a rendered screenshot of the room
     When the judge evaluates it against the brief
-    Then the verdict carries cohesion, colors, style and adherence scores
+    Then the verdict carries cohesion, colors, style, adherence, correct rotation and completeness scores
 
   Scenario: The judge's verdict becomes memory the agent can read
     Given a judged room
@@ -107,3 +107,41 @@ Feature: Conversational room designer
     Given a batch containing valid changes and an invalid furniture identifier
     When the agent applies the batch
     Then the valid changes are preserved in order and the rejection is reported
+
+  Scenario: Agent thinking summaries and tool activity are visible during a turn
+    Given a browser subscribed to agent activity independently of scene progress
+    When a provider returns a thinking summary and calls a room tool
+    Then the browser receives the complete public summary and tool arguments and results before the final reply
+    And the activity is remembered with the response without provider thought signatures
+
+  Scenario: Agent activity can be expanded and remains available after the reply
+    Given an agent that is working on a chat turn
+    When the user expands "Ver pensamiento"
+    Then the available thinking summaries and tool activity are visible
+    And each intervention identifies its agent in a readable conversation with technical details collapsed
+    And the collapsed disclosure shows only "Pensando…" while the turn is running
+    And incoming activity never opens the disclosure automatically
+    And the completed activity remains available after the reply and when restoring the conversation
+
+  Scenario: Stopped and superseded turns cannot update the active thinking panel
+    Given a turn with visible agent activity
+    When that turn is stopped or replaced by another request
+    Then late progress cannot change the new turn's activity or restart its thinking indicator
+
+  Scenario: Judge thinking remains separate from designer thinking
+    Given a completed design awaiting visual judgement
+    When the judge returns a public thinking summary
+    Then its progress and saved summary identify the judge and the evaluated round
+    And the next design round starts a separate thinking panel
+
+  Scenario: The judge displays every rubric grade out of ten
+    Given a completed judge evaluation
+    When its result appears in the conversation
+    Then cohesion, colors, style, brief adherence, correct rotation and completeness each show their grade out of ten
+    And the judge's average and target remain visible while its thinking stays collapsed
+
+  Scenario: Rotation and completeness count towards the judge target
+    Given a room with good styling but badly oriented or missing furniture
+    When the judge grades correct rotation and completeness below the target
+    Then the mean includes all six equally weighted rubric dimensions
+    And the designer receives both weak dimensions to improve the room

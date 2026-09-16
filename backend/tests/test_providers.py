@@ -194,7 +194,7 @@ async def test_visual_picker_receives_photos_and_judge_receives_png(tmp_path, pn
         assert any(p.inline_data for p in model.requests[0].contents[0].parts)
     model = RecordingModel(
         response=json.dumps(
-            {"cohesion": 8, "colors": 8, "style": 7, "adherence": 9, "overall": 8, "notes": "bien"}
+            {"cohesion": 8, "colors": 8, "style": 7, "adherence": 9, "rotation": 8, "completeness": 8, "overall": 8, "notes": "bien"}
         )
     )
     assert (await AdkJudge(model).judge("office", png))["overall"] == 8
@@ -204,7 +204,7 @@ async def test_visual_picker_receives_photos_and_judge_receives_png(tmp_path, pn
 async def test_invalid_judge_score_rejected(png):
     model = RecordingModel(
         response=json.dumps(
-            {"cohesion": 80, "colors": 8, "style": 7, "adherence": 9, "overall": 8, "notes": "bad"}
+            {"cohesion": 80, "colors": 8, "style": 7, "adherence": 9, "rotation": 8, "completeness": 8, "overall": 8, "notes": "bad"}
         )
     )
     with pytest.raises(ValueError):

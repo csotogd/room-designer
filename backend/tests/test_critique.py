@@ -14,7 +14,7 @@ from room_designer.domain.room import empty_state
 
 
 def verdict(score, notes="equilibra los colores"):
-    return dict(cohesion=score, colors=score, style=score, adherence=score, overall=10, notes=notes)
+    return dict(cohesion=score, colors=score, style=score, adherence=score, rotation=score, completeness=score, overall=10, notes=notes)
 
 
 class ScriptedJudge:
@@ -72,7 +72,7 @@ def test_mean_controls_stop_instead_of_overall_or_rounded_score():
     assert "equilibra los colores" in plan.brief and "oficina" in plan.brief
     record_verdict(state, {**verdict(7), "overall": 1}, "r2", "now", "oficina")
     assert plan_refinement(state, 7)[0] is None
-    assert mean_score(dict(cohesion=4, colors=6, style=8, adherence=6)) == 6
+    assert mean_score(dict(cohesion=4, colors=6, style=8, adherence=6, rotation=6, completeness=6)) == 6
 
 
 @scenario("A refinement loop continues through stagnation until the target is reached")

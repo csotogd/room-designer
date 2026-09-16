@@ -26,7 +26,7 @@ class FixtureJudge(ConstantJudge):
     async def judge(self, brief, png):
         result = await super().judge(brief, png)
         if "prueba del bucle" in brief:
-            result.update(dict.fromkeys(("cohesion", "colors", "style", "adherence"), next(self.scores)))
+            result.update(dict.fromkeys(("cohesion", "colors", "style", "adherence", "rotation", "completeness"), next(self.scores)))
         return result
 
 

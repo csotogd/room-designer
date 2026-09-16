@@ -1,6 +1,7 @@
+import { AgentActivityPanel } from './AgentActivityPanel'
 import { SceneSync } from '../../app/designer/SceneSync'
 import { equal } from '../../app/designer/scene'
-import type { SceneSnapshot } from '../../app/designer/actions'
+import type { DesignerActivity, DesignerActivityProgress, SceneSnapshot } from '../../app/designer/actions'
 import { DesignerClient, type DesignerReply } from '../../app/designer/DesignerClient'
 import { stateToActions, type DesignerAction, type DesignerJudgement, type DesignerRoomState, type DesignerScore } from '../../app/designer/actions'
 
@@ -29,6 +30,9 @@ export class ChatPanel {
   private restored = false
   private sceneSynced = false
   private applying = false
+  private activity: AgentActivityPanel | null = null
+  private activityRound = 0
+  private activityPhase: 'design' | 'judge' = 'design'
 
   constructor(private readonly root: Document, private readonly host: ChatPanelHost) {
     this.messages = root.querySelector<HTMLElement>('#chat-messages')!
@@ -49,6 +53,7 @@ export class ChatPanel {
       },
       onState: (state) => this.syncFromState(state),
       onReply: (reply) => this.onReply(reply),
+      onActivity: (progress) => this.onActivity(progress),
       onJudgement: (judgement) => this.onJudgement(judgement),
       onEdit: (result) => this.sync.result(result),
       onStopped: (runId, reason) => {
@@ -124,7 +129,7 @@ export class ChatPanel {
         this.addBubble('user', text)
         this.input.value = ''
         this.pendingRequest = this.client.chat(text, this.sync.currentRevision)
-        this.addThinking('Diseñando…')
+        this.startActivity(0)
       } catch (error) {
         if (generation !== this.generation) return
         this.clearCycle()
@@ -221,6 +226,11 @@ export class ChatPanel {
       for (const turn of state.conversation) {
         const who = turn.role === 'judge' ? 'judge' : turn.role === 'user' ? 'user' : turn.round ? 'agent-refine' : 'assistant'
         const label = who === 'judge' ? 'Juez: ' : who === 'agent-refine' ? `Agente (ronda ${turn.round}): ` : ''
+        if (turn.activity?.length) {
+          const activity = new AgentActivityPanel(this.root)
+          activity.finish('Finalizado', turn.activity)
+          this.messages.append(activity.element)
+        }
         this.addBubble(who, label + turn.text)
       }
     }
@@ -235,6 +245,7 @@ export class ChatPanel {
 
   private onReply(reply: DesignerReply): void {
     if (reply.refinement ? reply.runId !== this.runId : reply.requestId !== this.pendingRequest) return
+    this.finishActivity('Finalizado', reply.activity)
     this.pendingRequest = null
     this.runId = reply.runId
     this.removeThinking()
@@ -279,7 +290,7 @@ export class ChatPanel {
       const image = await this.host.screenshot()
       if (generation !== this.generation || reply.runId !== this.runId) return
       if (image.length < 100) throw new Error('No se pudo capturar la habitación.')
-      this.addThinking('El juez está evaluando la habitación…')
+      this.startActivity(reply.round ?? 0, 'judge')
       this.client.judge(image, reply.evaluation!)
     } catch (error) {
       if (generation === this.generation) this.stop(`No pude preparar la imagen: ${String(error)}`)
@@ -288,6 +299,7 @@ export class ChatPanel {
 
   private onJudgement(judgement: DesignerJudgement): void {
     if (judgement.runId !== this.runId || judgement.revision !== this.revision) return
+    this.finishActivity('Finalizado', judgement.activity)
     this.removeThinking()
     const bubble = this.root.createElement('div')
     bubble.className = 'chat-bubble judge verdict'
@@ -316,7 +328,7 @@ export class ChatPanel {
     this.messages.append(bubble)
     this.renderScores(judgement.state)
     this.scroll()
-    if (judgement.refining) this.addThinking('El agente está aplicando las observaciones del juez…')
+    if (judgement.refining) this.startActivity((judgement.round ?? 0) + 1)
     else this.clearCycle()
   }
 
@@ -352,13 +364,13 @@ export class ChatPanel {
     }
   }
 
-  private appendChips(parent: HTMLElement, verdict: Pick<DesignerScore, 'cohesion' | 'colors' | 'style' | 'adherence'>, prefix: string): void {
+  private appendChips(parent: HTMLElement, verdict: Pick<DesignerScore, 'cohesion' | 'colors' | 'style' | 'adherence' | 'rotation' | 'completeness'>, prefix: string): void {
     const chips = this.root.createElement('div')
     chips.className = 'verdict-chips'
-    for (const [label, value] of [['cohesión', verdict.cohesion], ['colores', verdict.colors], ['estilo', verdict.style], ['brief', verdict.adherence]] as const) {
+    for (const [label, value] of [['Cohesión', verdict.cohesion], ['Colores', verdict.colors], ['Estilo', verdict.style], ['Adecuación al encargo', verdict.adherence], ['Rotación correcta', verdict.rotation], ['Completitud', verdict.completeness]] as const) {
       const chip = this.root.createElement('span')
       chip.className = `${prefix}-chip`
-      chip.textContent = `${label} ${value}`
+      chip.textContent = `${label} ${value === undefined ? 'Sin evaluar' : `${this.grade(value)}/10`}`
       chips.append(chip)
     }
     parent.append(chips)
@@ -373,6 +385,7 @@ export class ChatPanel {
   }
 
   private clearCycle(): void {
+    this.finishActivity('Interrumpido')
     ++this.generation
     window.clearTimeout(this.captureTimer)
     this.runId = null
@@ -392,7 +405,33 @@ export class ChatPanel {
     this.scroll()
   }
 
+  private finishActivity(status: string, entries?: readonly DesignerActivity[]): void {
+    this.activity?.finish(status, entries)
+    this.activity = null
+  }
+
+  private startActivity(round: number, phase: 'design' | 'judge' = 'design'): void {
+    this.removeThinking()
+    this.activityRound = round
+    this.activityPhase = phase
+    this.activity = new AgentActivityPanel(this.root)
+    this.messages.append(this.activity.element)
+    this.scroll()
+  }
+
+  private onActivity(progress: DesignerActivityProgress): void {
+    if (!this.activity || progress.round !== this.activityRound || (progress.phase ?? 'design') !== this.activityPhase) return
+    if (this.pendingRequest ? progress.requestId !== this.pendingRequest : progress.runId !== this.runId) return
+    this.runId = progress.runId
+    this.activity.append(progress.entry)
+    this.scroll()
+  }
+
   private addThinking(text: string): void {
+    if (this.activity) {
+      this.activity.updateStatus(text)
+      return
+    }
     this.removeThinking()
     const bubble = this.root.createElement('div')
     bubble.className = 'chat-bubble assistant thinking'

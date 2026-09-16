@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import uuid4
 
+from room_designer.application.activity import activity_scope
 from room_designer.application.critique import plan_refinement, validate_target, verdict_text
 from room_designer.application.design import DesignSession
 from room_designer.application.ports import RoomJudge, ScreenshotStore
@@ -29,6 +30,7 @@ class Cycle:
     round: int = 0
     revision: str | None = None
     awaiting_capture: bool = False
+    activity: bool = False
 
 
 class DesignWorkflow:
@@ -49,7 +51,8 @@ class DesignWorkflow:
         self.control = asyncio.Lock()
 
     async def start(
-        self, owner: str, brief: str, request_id: str, emit: Emit, expected_revision: str | None = None
+        self, owner: str, brief: str, request_id: str, emit: Emit, expected_revision: str | None = None,
+        *, activity: bool = False,
     ) -> None:
         async with self.control:
             if expected_revision is not None:
@@ -65,7 +68,7 @@ class DesignWorkflow:
                     )
                     return
             await self._stop("Un nuevo encargo ha sustituido el ciclo anterior.")
-            cycle = Cycle(uuid4().hex, owner, brief, emit)
+            cycle = Cycle(uuid4().hex, owner, brief, emit, activity=activity)
             self.cycle = cycle
             self.task = asyncio.create_task(
                 self._run(cycle, request_id, lambda: self._design(cycle, brief, request_id))
@@ -134,8 +137,14 @@ class DesignWorkflow:
                 log.debug("Could not deliver cycle failure", exc_info=True)
 
     async def _design(self, cycle: Cycle, brief: str, request_id: str) -> None:
+        async def report(entry: Json) -> None:
+            if self.cycle is cycle:
+                await cycle.emit({"type": "agent.progress", "requestId": request_id,
+                                  "runId": cycle.id, "round": cycle.round, "entry": entry})
+
         result = await self.session.chat(
-            brief, request_id, source="judge" if cycle.round else "user", round=cycle.round
+            brief, request_id, source="judge" if cycle.round else "user", round=cycle.round,
+            on_activity=report if cycle.activity else None,
         )
         cycle.revision = result["state"]["revision"]
         cycle.awaiting_capture = not result.get("conversational", False)
@@ -155,9 +164,18 @@ class DesignWorkflow:
         )
 
     async def _judge(self, cycle: Cycle, png: bytes, request_id: str) -> None:
+        activity = []
+
+        async def report(entry: Json) -> None:
+            activity.append(entry)
+            if cycle.activity and self.cycle is cycle:
+                await cycle.emit({"type": "agent.progress", "requestId": request_id,
+                                  "runId": cycle.id, "round": cycle.round, "phase": "judge", "entry": entry})
+
         async with asyncio.timeout(self.judge_timeout):
             evidence = await self.screenshots.save(request_id, png)
-            verdict = await self.judge.judge(cycle.brief, png)
+            with activity_scope(report):
+                verdict = await self.judge.judge(cycle.brief, png)
         recorded = await self.session.record_verdict(
             verdict,
             request_id,
@@ -167,6 +185,7 @@ class DesignWorkflow:
             round=cycle.round,
             target=self.target,
             evidence=evidence,
+            activity=activity,
         )
         entry = recorded["entry"]
         plan, reason = plan_refinement(recorded["state"], self.target)
@@ -175,6 +194,7 @@ class DesignWorkflow:
         await cycle.emit(
             {
                 "type": "judge.result",
+                "activity": activity,
                 "requestId": request_id,
                 "runId": cycle.id,
                 "revision": cycle.revision,

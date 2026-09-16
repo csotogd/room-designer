@@ -61,6 +61,32 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('ChatPanel judge-agent handoff', () => {
+  test('cada nota del rubric muestra su escala sobre diez', async () => {
+    await submit()
+    events().onReply(reply())
+    events().onJudgement(judgement())
+    expect([...document.querySelectorAll('.verdict-chip')].map((chip) => chip.textContent)).toEqual([
+      'Cohesión 6/10', 'Colores 6/10', 'Estilo 6/10', 'Adecuación al encargo 6/10',
+      'Rotación correcta Sin evaluar', 'Completitud Sin evaluar',
+    ])
+  })
+  test('separa el pensamiento del juez y descarta progreso de fases o rondas anteriores', async () => {
+    await submit()
+    events().onReply(reply())
+    await vi.advanceTimersByTimeAsync(100)
+    const judgePanel = document.querySelector('#chat-thinking')!
+    const entry = { kind: 'thinking' as const, agent: 'Juez', text: 'Reviso el paso junto a la puerta.' }
+    events().onActivity!({ requestId: 'j1', runId: 'run1', round: 0, phase: 'judge', entry })
+    expect(judgePanel.textContent).toContain(entry.text)
+    events().onJudgement({ ...judgement(), activity: [entry] })
+    expect(judgePanel.textContent).toContain('Finalizado')
+    const nextPanel = document.querySelector('#chat-thinking')!
+    events().onActivity!({ requestId: 'j1', runId: 'run1', round: 0, phase: 'judge', entry })
+    expect(nextPanel.textContent).not.toContain(entry.text)
+    events().onActivity!({ requestId: 'refine', runId: 'run1', round: 1,
+      entry: { kind: 'thinking', agent: 'Diseñador', text: 'Ampliaré el paso.' } })
+    expect(nextPanel.textContent).toContain('Ampliaré el paso.')
+  })
   test('aplica varios movimientos, un giro y una sustitución antes de capturar la ronda', async () => {
     await submit()
     events().onReply(reply())
@@ -284,4 +310,13 @@ describe('ChatPanel judge-agent handoff', () => {
     events().onState({ ...state(), verdict: score() })
     expect(host.apply).not.toHaveBeenCalled()
   })
+})
+
+test('shows rotation and completeness grades and marks older ungraded dimensions', () => {
+  events().onState({ ...state(), verdict: { ...score(), rotation: 4, completeness: 8 } })
+  expect(document.querySelector('#chat-scores')!.textContent).toContain('Rotación correcta 4/10')
+  expect(document.querySelector('#chat-scores')!.textContent).toContain('Completitud 8/10')
+  events().onState({ ...state(), verdict: score() })
+  expect(document.querySelector('#chat-scores')!.textContent).toContain('Rotación correcta Sin evaluar')
+  expect(document.querySelector('#chat-scores')!.textContent).toContain('Completitud Sin evaluar')
 })

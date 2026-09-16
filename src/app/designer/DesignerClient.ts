@@ -1,4 +1,4 @@
-import type { DesignerAction, DesignerJudgement, DesignerRoomState, EditResult, ManualEdit, EvaluationTicket } from './actions'
+import type { DesignerActivity, DesignerActivityProgress, DesignerAction, DesignerJudgement, DesignerRoomState, EditResult, ManualEdit, EvaluationTicket } from './actions'
 
 export interface DesignerReply {
   requestId: string
@@ -6,6 +6,7 @@ export interface DesignerReply {
   evaluation: EvaluationTicket | null
   reply: string
   actions: DesignerAction[]
+  activity?: DesignerActivity[]
   state: DesignerRoomState
   rejected: { reason: string }[]
   /** Encargo del usuario contra el que debe juzgarse la escena resultante. */
@@ -16,6 +17,7 @@ export interface DesignerReply {
 }
 
 export interface DesignerEvents {
+  onActivity?(progress: DesignerActivityProgress): void
   onState(state: DesignerRoomState): void
   onReply(reply: DesignerReply): void
   onJudgement(judgement: DesignerJudgement): void
@@ -69,6 +71,7 @@ export class DesignerClient {
         return
       }
       if (message.type === 'state') this.events.onState(message.state as DesignerRoomState)
+      else if (message.type === 'agent.progress') this.events.onActivity?.(message as unknown as DesignerActivityProgress)
       else if (message.type === 'reply') this.events.onReply(message as unknown as DesignerReply)
       else if (message.type === 'edit.result' || message.type === 'edit.conflict') this.events.onEdit?.(message as unknown as EditResult)
       else if (message.type === 'judge.result') {
@@ -88,7 +91,7 @@ export class DesignerClient {
   }
 
   chat(text: string, revision?: string): string {
-    return this.send({ type: 'chat', text, revision })
+    return this.send({ type: 'chat', text, revision, activity: true })
   }
 
   get endpoint(): string { return this.url }

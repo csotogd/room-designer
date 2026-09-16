@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Literal, NotRequired, TypedDict
 from uuid import uuid4
 
+from room_designer.application.activity import ActivitySink, activity_scope
 from room_designer.application.critique import record_verdict
 from room_designer.application.ports import AgentRuntime, ProductPicker, ProductSearch, RoomRepository
 from room_designer.domain.reconciliation import merge_scene, scene_snapshot, validate_scene
@@ -292,7 +293,10 @@ class DesignSession:
                 "changed": changed,
             }
 
-    async def chat(self, brief: str, request_id: str, source: str = "user", round: int = 0) -> Json:
+    async def chat(
+        self, brief: str, request_id: str, source: str = "user", round: int = 0,
+        on_activity: ActivitySink | None = None,
+    ) -> Json:
         digest = hashlib.sha256(json.dumps([brief, source, round], ensure_ascii=False).encode()).hexdigest()
         async with self.lock:
             state = await self.repository.load()
@@ -303,16 +307,24 @@ class DesignSession:
                 return {**receipt["response"], "state": state, "duplicate": True}
             editor = RoomEditor(state, self.catalog, request_id, datetime.now(timezone.utc).isoformat())
             tools = DesignTools(editor, self.search, self.picker, brief)
+            activity = []
+
+            async def collect(entry: Json) -> None:
+                activity.append(deepcopy(entry))
+                if on_activity is not None:
+                    await on_activity(entry)
+
             # Nothing is persisted if the model, a dependency or a deadline fails midway.
             async with asyncio.timeout(self.timeout):
-                reply = await self.runtime.run(brief, state, tools.functions())
+                with activity_scope(collect):
+                    reply = await self.runtime.run(brief, state, tools.functions())
             if tools.rejected:
                 reply += f" ({len(tools.rejected)} propuestas rechazadas; consulta los motivos.)"
             editor.state["conversation"] = (
                 state.get("conversation", [])
                 + [
                     {"role": source, "text": brief, "round": round},
-                    {"role": "model", "text": reply, "round": round},
+                    {"role": "model", "text": reply, "round": round, "activity": activity},
                 ]
             )[-40:]
             editor.state["revision"] = uuid4().hex
@@ -321,6 +333,7 @@ class DesignSession:
                 editor.state.pop("verdict", None)
             response = {
                 "reply": reply,
+                "activity": activity,
                 "actions": editor.actions,
                 "rejected": tools.rejected,
                 "conversational": tools.conversational,

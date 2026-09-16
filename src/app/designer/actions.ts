@@ -1,3 +1,19 @@
+export interface DesignerActivity {
+  kind: 'thinking' | 'tool_call' | 'tool_result'
+  agent: string
+  text?: string
+  tool?: string
+  data?: unknown
+}
+
+export interface DesignerActivityProgress {
+  phase?: 'design' | 'judge'
+  requestId: string
+  runId: string
+  round: number
+  entry: DesignerActivity
+}
+
 /**
  * Contrato de acciones del microservicio de diseño (espejo tipado del DSL
  * del servicio, igual que ProductData refleja AppCatalogEntry). El front
@@ -47,7 +63,7 @@ export interface DesignerRoomState {
   /** Última nota del juez sobre la habitación actual (si ya fue juzgada). */
   verdict?: DesignerScore
   verdicts?: DesignerScore[]
-  conversation?: { role: 'user' | 'model' | 'judge'; text: string; round?: number }[]
+  conversation?: { role: 'user' | 'model' | 'judge'; text: string; round?: number; activity?: DesignerActivity[] }[]
   environment?: SceneEnvironment
 }
 
@@ -96,18 +112,22 @@ export interface DesignerVerdict {
   colors: number
   style: number
   adherence: number
+  /** Opcionales para poder leer valoraciones guardadas con la rúbrica anterior. */
+  rotation?: number
+  completeness?: number
   overall: number
   notes: string
 }
 
 /** Resultado completo de un juicio: veredicto + estado del bucle de refinamiento. */
 export interface DesignerJudgement {
+  activity?: DesignerActivity[]
   requestId: string
   runId: string
   revision: string
   state: DesignerRoomState
   verdict: DesignerVerdict
-  /** Nota agregada de la habitación (media de las cuatro métricas). */
+  /** Nota agregada de la habitación (media de las seis métricas). */
   mean: number
   /** Objetivo del bucle: se refina hasta alcanzarlo. */
   target: number

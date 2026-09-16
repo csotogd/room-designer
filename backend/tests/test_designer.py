@@ -105,7 +105,7 @@ async def test_websocket_contract(session, tmp_path, png):
 @scenario("The judge scores the rubric dimensions from a screenshot")
 async def test_judge(png):
     verdict = await ConstantJudge().judge("office", png)
-    assert all(1 <= verdict[k] <= 10 for k in ("cohesion", "colors", "style", "adherence", "overall"))
+    assert all(1 <= verdict[k] <= 10 for k in ("cohesion", "colors", "style", "adherence", "rotation", "completeness", "overall"))
 
 
 @pytest.mark.parametrize("value", [None, float("nan"), float("inf"), True, "2"])

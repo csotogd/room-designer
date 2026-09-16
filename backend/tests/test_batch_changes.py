@@ -30,7 +30,7 @@ class BatchRuntime:
 
 class Judge:
     async def judge(self, brief, png):
-        return dict(cohesion=5, colors=5, style=5, adherence=5, notes="Reorganiza las cuatro sillas")
+        return dict(cohesion=5, colors=5, style=5, adherence=5, rotation=5, completeness=5, notes="Reorganiza las cuatro sillas")
 
 
 class Screenshots:

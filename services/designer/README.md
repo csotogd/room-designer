@@ -114,7 +114,8 @@ historial y conversación en lenguaje natural). El agente lee esa conversación
 en sus turnos posteriores. `application/workflow.py` coordina el ciclo;
 el WebSocket se limita a recibir comandos y entregar eventos.
 
-La media aritmética de cohesión, colores, estilo y adherencia debe alcanzar
+La media aritmética de cohesión, colores, estilo, adecuación al encargo,
+rotación correcta y completitud debe alcanzar
 `DESIGNER_JUDGE_TARGET` (7 por defecto, entre 1 y 10). `overall` es informativo
 y no decide el paro. No se redondea antes de comparar. No hay límite de
 rondas ni paro por estancamiento: incluso una ronda sin acciones vuelve a
@@ -126,7 +127,7 @@ El servidor lo consume una sola vez y conserva el encargo original, aunque
 el cliente envíe otro `brief`. Tras una nota baja, entrega el veredicto y
 lanza automáticamente un turno con las observaciones del juez.
 
-El chat muestra las intervenciones de ambos, las cuatro notas, la media y
+El chat muestra las intervenciones de ambos, las seis notas, la media y
 un historial desplegable. Después de modificar la habitación, la nota
 anterior queda en el historial y la actual aparece pendiente de evaluación.
 La conversación y las últimas 20 evaluaciones sobreviven a una recarga;
@@ -145,7 +146,7 @@ con el servidor: las capturas sin `runId`/`revision` ya no se aceptan.
 | Variable | Valor por defecto |
 |---|---|
 | `DESIGNER_PORT` | 8790 (`PORT` tiene precedencia en contenedores) |
-| `DESIGNER_JUDGE_TARGET` | 7 (media de las cuatro métricas) |
+| `DESIGNER_JUDGE_TARGET` | 7 (media de las seis métricas) |
 | `DESIGNER_TURN_TIMEOUT` | 180 segundos |
 | `DESIGNER_ROOM_FILE` | `data/designer/room-<site>.json` |
 | `DESIGNER_SCREENSHOT_DIR` | `data/designer/screenshots` |
@@ -159,3 +160,35 @@ Los tests ejecutan las tools reales de ADK sin llamadas facturables. La
 integración de los tres proveedores se verifica con respuestas remotas
 simuladas. Para activar una conexión real configura la clave correspondiente
 en `.env` y reinicia el servicio.
+
+## Pensamiento y actividad en la conversación
+
+Cada turno del diseñador y del juez muestra «Pensando…» y un desplegable
+«Ver pensamiento». El contenido identifica siempre al agente: diseñador,
+juez, selector de muebles o agente de la zona correspondiente. Los resúmenes
+públicos de razonamiento se muestran íntegros; las acciones tienen nombres
+legibles y sus argumentos/resultados completos están en «Ver detalles de la
+acción». Cada actualización aparece cuando el proveedor la entrega a ADK;
+no se inventa actividad mientras se espera al modelo.
+
+Para Gemini se solicita `include_thoughts`. La API entrega resúmenes públicos,
+no el razonamiento interno completo; las firmas opacas del proveedor nunca se
+incluyen en el chat. Los otros proveedores muestran el contenido público que
+expongan. La falta de resumen no impide ver las herramientas utilizadas.
+Referencia: https://ai.google.dev/gemini-api/docs/thinking
+
+El cliente pide `activity: true` al iniciar el chat. El servicio envía eventos
+`agent.progress` con ciclo, petición, ronda, fase y agente; la respuesta final
+incluye `activity`, que también se guarda en la conversación. Una cancelación,
+un nuevo encargo o un cambio de fase impiden aplicar eventos antiguos. La
+suscripción de actividad es independiente del progreso de la escena y los
+clientes anteriores siguen recibiendo sus respuestas habituales.
+
+La rúbrica incluye cohesión, colores, estilo, adecuación al encargo, rotación
+correcta y completitud, todas sobre 10 y con el mismo peso en la media.
+Rotación correcta valora la orientación funcional y el acceso a los muebles.
+Completitud valora que estén los muebles necesarios para el uso solicitado,
+sin carencias ni saturación y respetando el minimalismo funcional. El juez
+explica los problemas en sus notas y el diseñador recibe las dimensiones
+que quedan por debajo del objetivo para corregirlas. Las notas históricas
+que no incluyan los nuevos criterios muestran «Sin evaluar».
