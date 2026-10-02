@@ -57,6 +57,16 @@ describe('Point3D', () => {
 describe('Segment', () => {
   const seg = new Segment(new Point2D(0, 0), new Point2D(10, 0))
 
+  test.each([
+    [[5, -2, 5, 2], true], [[10, 0, 12, 2], true], [[3, 0, 7, 0], true],
+    [[11, 0, 12, 0], false], [[-2, 0, -1, 0], false], [[3, 1, 7, 1], false],
+    [[3, -1, 7, -1], false], [[5, 1, 5, 2], false],
+  ] as [number[], boolean][])('intersection with %s is %s', (points, expected) => {
+    const other = new Segment(new Point2D(points[0]!, points[1]!), new Point2D(points[2]!, points[3]!))
+    expect(seg.intersects(other)).toBe(expected)
+    expect(other.intersects(seg)).toBe(expected)
+  })
+
   test('length and direction', () => {
     expect(seg.length()).toBe(10)
     expect(seg.direction().equals(new Point2D(1, 0))).toBe(true)

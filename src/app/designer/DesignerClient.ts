@@ -20,9 +20,17 @@ export interface DesignerProgress {
   requestId: string
   runId: string
   state: DesignerRoomState
+  evaluation?: EvaluationTicket
+}
+
+export interface DesignerPreviewJudgement {
+  runId: string
+  revision: string
+  verdict: import('./actions').DesignerScore
 }
 
 export interface DesignerEvents {
+  onPreviewJudgement?(judgement: DesignerPreviewJudgement): void
   onProgress?(progress: DesignerProgress): void
   onActivity?(progress: DesignerActivityProgress): void
   onState(state: DesignerRoomState): void
@@ -43,18 +51,23 @@ export class DesignerClient {
   private retryMs = 1000
   private closed = false
   private counter = 0
+  private readonly localPage: string | null
 
   constructor(
     private readonly events: DesignerEvents,
     private readonly url: string = (import.meta.env?.VITE_DESIGNER_URL as string | undefined) ??
       'ws://localhost:8790/ws',
+    freshLocalPage = false,
   ) {
+    this.localPage = freshLocalPage ? crypto.randomUUID() : null
     this.connect()
   }
 
   private connect(): void {
     if (this.closed) return
-    const socket = new WebSocket(this.url)
+    const url = new URL(this.url)
+    if (this.localPage) url.searchParams.set('localPage', this.localPage)
+    const socket = new WebSocket(url.toString())
     this.socket = socket
     socket.addEventListener('open', () => {
       this.events.onConnection(true)
@@ -82,6 +95,7 @@ export class DesignerClient {
       else if (message.type === 'agent.progress') this.events.onActivity?.(message as unknown as DesignerActivityProgress)
       else if (message.type === 'reply') this.events.onReply(message as unknown as DesignerReply)
       else if (message.type === 'edit.result' || message.type === 'edit.conflict') this.events.onEdit?.(message as unknown as EditResult)
+      else if (message.type === 'judge.preview.result') this.events.onPreviewJudgement?.(message as unknown as DesignerPreviewJudgement)
       else if (message.type === 'judge.result') {
         this.events.onJudgement(message as unknown as DesignerJudgement)
       } else if (message.type === 'loop.stopped') {
@@ -99,7 +113,8 @@ export class DesignerClient {
   }
 
   chat(text: string, revision?: string): string {
-    return this.send({ type: 'chat', text, revision, progress: true, activity: true })
+    return this.send({ type: 'chat', text, revision, progress: true, activity: true,
+      liveEvaluation: !!this.events.onProgress && !!this.events.onPreviewJudgement })
   }
 
   get endpoint(): string { return this.url }
@@ -110,6 +125,10 @@ export class DesignerClient {
 
   judge(imageDataUrl: string, ticket: EvaluationTicket): string {
     return this.send({ type: 'judge', image: imageDataUrl, ...ticket })
+  }
+
+  judgePreview(imageDataUrl: string, ticket: EvaluationTicket): string {
+    return this.send({ type: 'judge.preview', image: imageDataUrl, ...ticket })
   }
 
   stop(runId?: string): void {

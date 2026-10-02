@@ -1,11 +1,15 @@
+import { evaluationHistory } from './EvaluationHistory'
+import { ConversationScroll } from './ConversationScroll'
 import { AgentActivityPanel } from './AgentActivityPanel'
+import { ZonePlanPanel } from './ZonePlanPanel'
 import { SceneSync } from '../../app/designer/SceneSync'
 import { equal, sceneFromState } from '../../app/designer/scene'
-import type { DesignerActivity, DesignerActivityProgress, SceneSnapshot } from '../../app/designer/actions'
-import { DesignerClient, type DesignerReply, type DesignerProgress } from '../../app/designer/DesignerClient'
+import type { DesignerZone, DesignerActivity, DesignerActivityProgress, SceneSnapshot } from '../../app/designer/actions'
+import { DesignerClient, type DesignerReply, type DesignerProgress, type DesignerPreviewJudgement } from '../../app/designer/DesignerClient'
 import { stateToActions, type DesignerAction, type DesignerJudgement, type DesignerRoomState, type DesignerScore } from '../../app/designer/actions'
 
 export interface ChatPanelHost {
+  showZones?(zones: readonly DesignerZone[]): void
   apply(actions: readonly DesignerAction[]): { applied: number; skipped: { reason: string }[] }
   screenshot(): string | Promise<string>
   sceneIsEmpty(): boolean
@@ -15,8 +19,10 @@ export interface ChatPanelHost {
 
 /** User-visible conversation and capture handoff; the server owns the refinement policy. */
 export class ChatPanel {
+  private readonly zones: ZonePlanPanel
   private readonly sync: SceneSync
   private readonly client: DesignerClient
+  private readonly scrolling: ConversationScroll
   private readonly messages: HTMLElement
   private readonly input: HTMLTextAreaElement
   private readonly status: HTMLElement
@@ -32,16 +38,25 @@ export class ChatPanel {
   private applying = false
   private committedState: DesignerRoomState | null = null
   private previewing = false
+  private previewRevision: string | null = null
+  private previewScores: DesignerScore[] = []
   private activity: AgentActivityPanel | null = null
   private activityRound = 0
   private activityPhase: 'design' | 'judge' = 'design'
 
   constructor(private readonly root: Document, private readonly host: ChatPanelHost) {
     this.messages = root.querySelector<HTMLElement>('#chat-messages')!
+    this.scrolling = new ConversationScroll(this.messages)
     this.input = root.querySelector<HTMLTextAreaElement>('#chat-input')!
     this.status = root.querySelector<HTMLElement>('#chat-status')!
     this.scores = root.querySelector<HTMLElement>('#chat-scores')
     this.stopButton = root.querySelector<HTMLButtonElement>('#chat-stop')
+    const zones = root.createElement('section')
+    zones.id = 'chat-zones'
+    zones.hidden = true
+    this.messages.before(zones)
+    this.zones = new ZonePlanPanel(zones)
+    const freshLocalPage = import.meta.env.DEV && ['localhost', '127.0.0.1', '[::1]'].includes(root.defaultView?.location.hostname ?? '')
     this.client = new DesignerClient({
       onConnection: (connected) => {
         this.sync?.connection(connected)
@@ -55,6 +70,7 @@ export class ChatPanel {
       },
       onState: (state) => this.syncFromState(state),
       onProgress: (progress) => this.onProgress(progress),
+      onPreviewJudgement: (judgement) => this.onPreviewJudgement(judgement),
       onReply: (reply) => this.onReply(reply),
       onActivity: (progress) => this.onActivity(progress),
       onJudgement: (judgement) => this.onJudgement(judgement),
@@ -72,7 +88,7 @@ export class ChatPanel {
         this.clearCycle()
         this.addBubble('assistant', `⚠ ${error}`)
       },
-    })
+    }, undefined, freshLocalPage)
     const syncStatus = root.createElement('div')
     syncStatus.id = 'chat-sync'
     syncStatus.setAttribute('role', 'status')
@@ -101,9 +117,10 @@ export class ChatPanel {
         this.revision = state.revision
         if (!this.sync.hasPending) {
           this.renderScores(state)
+          this.renderZones(state)
         }
       },
-    }, root.defaultView?.sessionStorage, `room-designer:manual:${this.client.endpoint}`)
+    }, freshLocalPage ? undefined : root.defaultView?.sessionStorage, `room-designer:manual:${this.client.endpoint}`)
     root.addEventListener('pointerdown', (event) => {
       if ((event.target as Element | null)?.closest?.('#container3d, #canvas2d')) this.sync.beginGesture()
     })
@@ -201,6 +218,7 @@ export class ChatPanel {
     this.sceneSynced = false
     if (this.runId || this.pendingRequest) this.stop('He detenido el ciclo porque has editado la habitación.')
     this.renderScores({ version: 1, room: null, openings: [], items: [] })
+    this.renderZones({ version: 1, room: null, openings: [], items: [] })
     this.sync.changed()
   }
 
@@ -256,13 +274,51 @@ export class ChatPanel {
     this.previewing = true
     try {
       this.reconcileScene(sceneFromState(progress.state))
-      this.addThinking('Actualizando los muebles de la habitación…')
+      this.renderZones(progress.state)
+      this.addThinking(progress.state.zones?.length
+        ? `Amueblando ${progress.state.zones.length} zonas en paralelo…`
+        : 'Actualizando los muebles de la habitación…')
+      this.renderScores({ ...progress.state, verdict: undefined,
+        verdicts: [...(this.committedState?.verdicts ?? []), ...this.previewScores] })
+      if (progress.evaluation) {
+        this.previewRevision = progress.evaluation.revision
+        this.addThinking('El juez está revisando este avance…')
+        const generation = this.generation
+        this.captureTimer = window.setTimeout(() => { void this.capturePreview(progress, generation) }, 100)
+      }
     } catch (error) { this.stop(`No pude mostrar el progreso: ${String(error)}`) }
+  }
+
+  private async capturePreview(progress: DesignerProgress, generation: number): Promise<void> {
+    try {
+      const image = await this.host.screenshot()
+      if (generation !== this.generation || progress.runId !== this.runId
+        || progress.evaluation?.revision !== this.previewRevision) return
+      if (image.length < 100) throw new Error('No se pudo capturar el avance.')
+      this.client.judgePreview(image, progress.evaluation!)
+    } catch (error) {
+      if (generation === this.generation) this.stop(`No pude evaluar el avance: ${String(error)}`)
+    }
+  }
+
+  private onPreviewJudgement(judgement: DesignerPreviewJudgement): void {
+    if (judgement.runId !== this.runId || judgement.revision !== this.previewRevision) return
+    this.previewRevision = null
+    this.previewScores.push(judgement.verdict)
+    const verdict = judgement.verdict
+    this.messages.append(this.verdictBubble(verdict,
+      `Juez · avance ${verdict.step} · ${this.grade(verdict.mean)}/10`))
+    this.renderScores({ version: 1, room: null, items: [], openings: [], verdict,
+      verdicts: [...(this.committedState?.verdicts ?? []), ...this.previewScores] })
+    this.addThinking('Aplicando las correcciones del juez…')
+    this.scrolling.afterAppend()
   }
 
   private onReply(reply: DesignerReply): void {
     if (reply.refinement ? reply.runId !== this.runId : reply.requestId !== this.pendingRequest) return
     this.restorePreview()
+    this.previewRevision = null
+    this.previewScores = []
     this.finishActivity('Finalizado', reply.activity)
     this.pendingRequest = null
     this.runId = reply.runId
@@ -319,17 +375,8 @@ export class ChatPanel {
     if (judgement.runId !== this.runId || judgement.revision !== this.revision) return
     this.finishActivity('Finalizado', judgement.activity)
     this.removeThinking()
-    const bubble = this.root.createElement('div')
-    bubble.className = 'chat-bubble judge verdict'
-    const title = this.root.createElement('div')
-    title.className = 'verdict-title'
-    title.textContent = `Juez · ${this.grade(judgement.mean)}/10 (objetivo ${judgement.target})`
-    bubble.append(title)
-    this.appendChips(bubble, judgement.verdict, 'verdict')
-    const notes = this.root.createElement('div')
-    notes.className = 'verdict-notes'
-    notes.textContent = judgement.verdict.notes
-    bubble.append(notes)
+    const bubble = this.verdictBubble(judgement.verdict,
+      `Juez · ${this.grade(judgement.mean)}/10 (objetivo ${judgement.target})`)
     const status = this.root.createElement('div')
     status.className = 'verdict-loop'
     status.textContent = judgement.refining
@@ -345,9 +392,29 @@ export class ChatPanel {
     }
     this.messages.append(bubble)
     this.renderScores(judgement.state)
-    this.scroll()
+    this.scrolling.afterAppend()
     if (judgement.refining) this.startActivity((judgement.round ?? 0) + 1)
     else this.clearCycle()
+  }
+
+  private verdictBubble(verdict: DesignerScore | DesignerJudgement['verdict'], heading: string): HTMLElement {
+    const bubble = this.root.createElement('div')
+    bubble.className = 'chat-bubble judge verdict'
+    const title = this.root.createElement('div')
+    title.className = 'verdict-title'
+    title.textContent = heading
+    bubble.append(title)
+    this.appendChips(bubble, verdict, 'verdict')
+    const notes = this.root.createElement('div')
+    notes.className = 'verdict-notes'
+    notes.textContent = verdict.notes
+    bubble.append(notes)
+    return bubble
+  }
+
+  private renderZones(state: DesignerRoomState): void {
+    this.zones.render(state)
+    this.host.showZones?.(state.zones ?? [])
   }
 
   private renderScores(state: DesignerRoomState): void {
@@ -368,17 +435,8 @@ export class ChatPanel {
       this.scores.append(last)
     }
     if (state.verdicts?.length) {
-      const history = this.root.createElement('details')
-      const summary = this.root.createElement('summary')
-      summary.textContent = 'Evolución de las notas'
-      history.append(summary)
-      for (const score of state.verdicts) {
-        const row = this.root.createElement('div')
-        row.textContent = `${new Date(score.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ronda ${score.round ?? 0}: ${this.grade(score.mean)}/10 — ${score.notes}`
-        row.title = `Cohesión ${score.cohesion} · colores ${score.colors} · estilo ${score.style} · brief ${score.adherence}`
-        history.append(row)
-      }
-      this.scores.append(history)
+      this.scores.append(evaluationHistory(this.root, state.verdicts,
+        (parent, score) => this.appendChips(parent, score, 'history')))
     }
   }
 
@@ -406,12 +464,16 @@ export class ChatPanel {
     if (this.previewing && this.committedState) {
       this.previewing = false
       this.reconcileScene(sceneFromState(this.committedState))
+      this.renderScores(this.committedState)
+      this.renderZones(this.committedState)
     }
   }
 
   private clearCycle(): void {
     this.restorePreview()
     this.finishActivity('Interrumpido')
+    this.previewRevision = null
+    this.previewScores = []
     ++this.generation
     window.clearTimeout(this.captureTimer)
     this.runId = null
@@ -428,7 +490,7 @@ export class ChatPanel {
     bubble.className = `chat-bubble ${who}`
     bubble.textContent = text
     this.messages.append(bubble)
-    this.scroll()
+    this.scrolling.afterAppend()
   }
 
   private finishActivity(status: string, entries?: readonly DesignerActivity[]): void {
@@ -442,7 +504,7 @@ export class ChatPanel {
     this.activityPhase = phase
     this.activity = new AgentActivityPanel(this.root)
     this.messages.append(this.activity.element)
-    this.scroll()
+    this.scrolling.afterAppend()
   }
 
   private onActivity(progress: DesignerActivityProgress): void {
@@ -450,7 +512,7 @@ export class ChatPanel {
     if (this.pendingRequest ? progress.requestId !== this.pendingRequest : progress.runId !== this.runId) return
     this.runId = progress.runId
     this.activity.append(progress.entry)
-    this.scroll()
+    this.scrolling.afterAppend()
   }
 
   private addThinking(text: string): void {
@@ -464,9 +526,8 @@ export class ChatPanel {
     bubble.id = 'chat-thinking'
     bubble.textContent = text
     this.messages.append(bubble)
-    this.scroll()
+    this.scrolling.afterAppend()
   }
 
   private removeThinking(): void { this.root.querySelector('#chat-thinking')?.remove() }
-  private scroll(): void { this.messages.scrollTop = this.messages.scrollHeight }
 }

@@ -24,9 +24,8 @@ export function footprintCorners(
 const EDGE_INSET = 1e-4
 
 /**
- * ¿Cabe el artículo entero dentro de la habitación? Las cuatro esquinas de su
- * huella deben caer dentro del polígono del suelo (con una tolerancia mínima
- * para poder pegarlo a la pared). Sin habitación cerrada no hay restricción.
+ * La huella debe quedar dentro del suelo sin atravesar ninguna pared, también
+ * en plantas cóncavas. El pequeño margen permite pegar muebles a una pared.
  */
 export function fitsInRoom(
   plan: FloorPlan,
@@ -37,11 +36,22 @@ export function fitsInRoom(
 ): boolean {
   const polygon = plan.floorPolygon()
   if (!polygon) return true
-  return footprintCorners(item, x, z, rotationY).every((corner) => {
-    const inset = new Point2D(
+  const corners = footprintCorners(item, x, z, rotationY).map((corner) =>
+    new Point2D(
       corner.x + (x - corner.x) * EDGE_INSET,
       corner.y + (z - corner.y) * EDGE_INSET,
-    )
-    return polygon.contains(inset)
+    ),
+  )
+  if (!corners.every(corner => polygon.contains(corner))) return false
+  // Ejes separadores del rectángulo y del segmento: detectan incluso un
+  // entrante estrecho que no contenga ninguna esquina del mueble.
+  return plan.walls.every(wall => {
+    const axes = [corners[1]!.sub(corners[0]!).perp(), corners[3]!.sub(corners[0]!).perp(),
+      wall.end.sub(wall.start).perp()]
+    return axes.some(axis => {
+      const footprint = corners.map(corner => corner.dot(axis))
+      const segment = [wall.start.dot(axis), wall.end.dot(axis)]
+      return Math.max(...footprint) < Math.min(...segment) || Math.max(...segment) < Math.min(...footprint)
+    })
   })
 }

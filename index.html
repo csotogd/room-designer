@@ -109,7 +109,7 @@
             <button data-plantool="wall">Dibujar pared</button>
             <button id="plan-close">Cerrar plano</button>
           </div>
-          <canvas id="canvas2d"></canvas>
+          <canvas id="canvas2d" tabindex="0"></canvas>
         </div>
 
         <section id="prompt-dock" aria-label="Empieza con una idea">
@@ -170,7 +170,25 @@
               <span class="step-dots"><i class="on"></i><i></i></span>
             </div>
             <h2 id="wizard-title-1">Todo empieza con tu espacio.</h2>
-            <p class="modal-sub">Elige la forma de la planta y ajusta las medidas reales de tu espacio.</p>
+            <p class="modal-sub">Crea tu habitación arrastrando sus paredes y esquinas. Después, añade puertas y ventanas.</p>
+            <div class="creation-layout">
+              <div class="creation-drawing">
+                <div class="draft-tools">
+                  <span>Tu plano</span><output id="room-area" aria-live="polite"></output>
+                  <button id="draft-undo" disabled>Deshacer</button>
+                  <button id="draft-redo" disabled>Rehacer</button>
+                  <button id="draft-center">Centrar</button>
+                </div>
+                <canvas id="creation-canvas" tabindex="0" aria-label="Plano de creación: arrastra paredes y esquinas"></canvas>
+                <p id="draft-hint" role="status">Arrastra las paredes y los puntos de las esquinas.</p>
+              </div>
+              <aside class="creation-options" aria-label="Forma de la nueva habitación">
+                <div id="wall-inspector" hidden>
+                  <h3 id="wall-name">Pared seleccionada</h3>
+                  <label>Longitud<span class="dim-field"><input id="wall-length" type="number" min="0.3" step="0.01" aria-label="Longitud de la pared" /><span class="unit">m</span></span></label>
+                  <p id="wall-message" role="status"></p>
+                </div>
+              <span class="eyebrow">Empieza con una forma</span>
             <div id="shape-cards">
               <button class="shape-card active" data-shape="rect" aria-pressed="true">
                 <svg viewBox="0 0 68 48"><rect x="10" y="8" width="48" height="32" rx="1.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><line x1="10" y1="44" x2="58" y2="44" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" opacity="0.5"/></svg>
@@ -180,26 +198,51 @@
                 <svg viewBox="0 0 68 48"><path d="M10 8 h48 v18 h-22 v14 H10 Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><line x1="10" y1="44" x2="36" y2="44" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" opacity="0.5"/></svg>
                 En L
               </button>
+              <button class="shape-card" data-shape="u" aria-pressed="false">
+                <svg viewBox="0 0 68 48" aria-hidden="true"><path d="M10 8H58V40H42V23H26V40H10Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>
+                En U
+              </button>
+              <button class="shape-card" data-shape="t" aria-pressed="false">
+                <svg viewBox="0 0 68 48" aria-hidden="true"><path d="M10 8H58V23H43V40H25V23H10Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>
+                En T
+              </button>
+              <button class="shape-card" data-shape="bevel" aria-pressed="false">
+                <svg viewBox="0 0 68 48" aria-hidden="true"><path d="M10 8H58V25L40 40H10Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>
+                Esquina diagonal
+              </button>
             </div>
+            <div id="room-sizes" aria-label="Tamaños de partida">
+              <button data-size="small" data-width="3" data-depth="3" aria-pressed="false">Pequeña <span>3 × 3 m</span></button>
+              <button data-size="medium" data-width="4.5" data-depth="3.5" class="active" aria-pressed="true">Mediana <span>4,5 × 3,5 m</span></button>
+              <button data-size="large" data-width="8" data-depth="6" aria-pressed="false">Grande <span>8 × 6 m</span></button>
+              <button data-size="xl" data-width="12" data-depth="8" aria-pressed="false">Amplia <span>12 × 8 m</span></button>
+            </div>
+            <details id="draft-dimensions"><summary>Medidas exactas de la plantilla</summary>
             <div class="dim-grid">
               <label>Ancho
-                <span class="dim-field"><input id="dim-w" type="number" min="2" max="15" step="0.1" value="4.5" /><span class="unit">m</span></span>
+                <span class="dim-field"><input id="dim-w" type="number" min="1" max="30" step="0.01" value="4.5" /><span class="unit">m</span></span>
               </label>
               <label>Fondo
-                <span class="dim-field"><input id="dim-d" type="number" min="2" max="15" step="0.1" value="3.5" /><span class="unit">m</span></span>
+                <span class="dim-field"><input id="dim-d" type="number" min="1" max="30" step="0.01" value="3.5" /><span class="unit">m</span></span>
               </label>
               <label>Alto
-                <span class="dim-field"><input id="dim-h" type="number" min="2.2" max="4" step="0.05" value="2.5" /><span class="unit">m</span></span>
+                <span class="dim-field"><input id="dim-h" type="number" min="2" max="6" step="0.01" value="2.5" /><span class="unit">m</span></span>
               </label>
-              <label class="l-only" hidden>Recorte ancho
-                <span class="dim-field"><input id="dim-cw" type="number" min="0.5" max="10" step="0.1" value="1.8" /><span class="unit">m</span></span>
+              <label class="cut-only" hidden><span id="cut-width-label">Recorte ancho</span>
+                <span class="dim-field"><input id="dim-cw" type="number" min="0.1" max="29.9" step="0.01" value="1.8" /><span class="unit">m</span></span>
               </label>
-              <label class="l-only" hidden>Recorte fondo
-                <span class="dim-field"><input id="dim-cd" type="number" min="0.5" max="10" step="0.1" value="1.4" /><span class="unit">m</span></span>
+              <label class="cut-only" hidden><span id="cut-depth-label">Recorte fondo</span>
+                <span class="dim-field"><input id="dim-cd" type="number" min="0.1" max="29.9" step="0.01" value="1.4" /><span class="unit">m</span></span>
               </label>
             </div>
-            <button id="wizard-next" class="primary-btn big">Continuar <span aria-hidden="true">→</span></button>
-            <button id="modal-load" class="link-btn">Abrir un proyecto guardado</button>
+            </details>
+              </aside>
+            </div>
+            <p id="room-error" class="wizard-message" role="status"></p>
+            <div class="wizard-footer">
+              <button id="wizard-next" class="primary-btn big">Continuar <span aria-hidden="true">→</span></button>
+              <button id="modal-load" class="link-btn">Abrir un proyecto guardado</button>
+            </div>
           </section>
 
           <section id="wizard-step-2" hidden>
@@ -208,7 +251,7 @@
               <span class="step-dots"><i class="on"></i><i class="on"></i></span>
             </div>
             <h2 id="wizard-title-2">Deja entrar la luz.</h2>
-            <p class="modal-sub">Haz clic sobre una pared del plano para colocar una apertura; clic sobre ella para quitarla.</p>
+            <p class="modal-sub">Haz clic en una pared para añadir una puerta o ventana. Selecciónala y arrastra su tirador para ajustar el ancho.</p>
             <div id="opening-toggle">
               <button data-opening="door" class="active" aria-pressed="true">
                 <svg viewBox="0 0 16 16"><path d="M4 14 V3 a1 1 0 0 1 1-1 h6 a1 1 0 0 1 1 1 v11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="8.5" r="0.9" fill="currentColor"/><line x1="2" y1="14" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -224,6 +267,8 @@
               <span><i class="leg-door"></i>Puerta</span>
               <span><i class="leg-window"></i>Ventana</span>
             </div>
+            <div id="wizard-opening-editor" hidden></div>
+            <p id="opening-error" class="wizard-message" role="status"></p>
             <div class="wizard-actions">
               <button id="wizard-back" class="ghost-btn">Atrás</button>
               <button id="create-room" class="primary-btn">Crear habitación</button>

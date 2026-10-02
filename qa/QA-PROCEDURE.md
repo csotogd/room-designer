@@ -2,14 +2,38 @@
 
 Sobre la app servida con `npm run dev` (http://localhost:5173).
 
+Comprobación del 12/09/2026 sobre la app real: creación inicial; arrastre de
+pared y esquina hasta obtener un contorno inclinado; puerta ensanchada de
+0,9 a 2 m mediante su tirador; ida y vuelta entre los pasos sin perder la
+geometría ni la apertura; creación y representación en 3D. También se
+comprobó una planta en U, su menú de pared visible, longitud exacta de 4,2 m
+y deshacer. Tras reiniciar el servidor, vuelve a aparecer el paso inicial.
+
 ## QA-1 · Crear la habitación desde el menú
 
-1. Abrir la app. **Esperado:** modal "Crea tu habitación" con formas
-   (Rectangular / En L), medidas, y enlace "cargar el proyecto guardado".
-2. Elegir "En L". **Esperado:** aparecen los campos de recorte.
+1. Abrir la app. **Esperado:** se inicia la creación de habitación con un plano
+   visto desde arriba. Arrastrar una pared amplía el contorno; arrastrar una
+   esquina cambia su longitud y forma. El menú de la pared refleja la longitud
+   en vivo y permite introducirla exactamente. Deshacer/Rehacer afecta al
+   borrador y Esc cancela el arrastre. Al pulsar **Crear habitación** se abre
+   esa planta en 3D. No aparece un botón "Editar habitación" en la escena.
+   **Nueva habitación** inicia otro borrador de creación. También hay cinco
+   formas (rectangular, L, U, T y diagonal) y cuatro tamaños de partida.
+2. Elegir "En U", tamaño "Grande" y abrir "Medidas exactas de la plantilla".
+   **Esperado:** 8×6 m y campos de recorte.
+   Ancho y fondo admiten 1–30 m y altura 2–6 m. Un recorte igual o mayor que
+   la habitación muestra un error e impide continuar. Repetir con T y diagonal.
 3. Crear una rectangular 4,5×3,5. **Esperado:** habitación 3D con las paredes
    que dan a cámara translúcidas (se ve el interior); catálogo a la izquierda.
 4. Arrastrar en la escena. **Esperado:** la cámara orbita; rueda = zoom.
+
+4b. En el segundo paso del asistente, colocar una puerta y seleccionarla.
+    Arrastrar el punto de su extremo y ajustar el deslizador o escribir 1,75 m.
+    **Esperado:** el hueco cambia en vivo, sin desplazar su inicio. Añadir una
+    ventana más adelante: la puerta deja de crecer al alcanzarla. Volver a
+    las medidas y continuar sin cambios conserva las aperturas; "Eliminar
+    apertura" borra solo la seleccionada. Comprobar también con teclado y
+    una pantalla estrecha: se puede acceder siempre a los controles de avance.
 
 ## QA-2 · Puertas y ventanas en 3D
 
@@ -22,6 +46,9 @@ Sobre la app servida con `npm run dev` (http://localhost:5173).
 7. Arrastrar la ventana. **Esperado:** se desliza por su pared, sin salirse
    ni atravesar otras aperturas; al soltar queda fija.
 8. Repetir con una **Puerta**. **Esperado:** hoja de madera con manilla.
+   Seleccionarla y ajustar **Ancho**. **Esperado:** hueco, marco y hoja cambian
+   en 3D; un solo deshacer recupera el ancho inicial y Rehacer vuelve a aplicar
+   el cambio. Guardar y abrir el proyecto conserva las nuevas medidas.
 9. Clic en el suelo o fuera. **Esperado:** se deselecciona (queda fijada).
 
 ## QA-3 · Muebles en 3D
@@ -30,6 +57,8 @@ Sobre la app servida con `npm run dev` (http://localhost:5173).
     verde dentro de la habitación, rojo fuera.
 11. Clic para colocar; arrastrarlo después. **Esperado:** pinchar y arrastrar
     lo mueve por el suelo; al soltar queda fijo. R lo rota.
+    En una planta en U, un mueble que atraviese el entrante se rechaza aunque
+    sus cuatro esquinas queden dentro de los brazos de la habitación.
 12. Colocar una **Mesa** y un **Jarrón** encima. **Esperado:** el jarrón se
     apoya sobre el tablero; arrastrar la mesa lo lleva consigo.
 
@@ -55,8 +84,9 @@ Sobre la app servida con `npm run dev` (http://localhost:5173).
 
 16. Guardar → recargar la página → "cargar el proyecto guardado" desde el
     modal. **Esperado:** vuelve todo (muebles rotados, aperturas, luces, hora).
-17. Botón "Plano". **Esperado:** overlay con el plano 2D; permite dibujar
-    paredes a mano y seleccionar/mover muebles; "Cerrar plano" vuelve al 3D.
+17. Botón "Plano 2D". **Esperado:** el plano del editor sigue disponible,
+    y "Cerrar plano" vuelve al 3D. El nuevo arrastre de paredes y esquinas
+    pertenece exclusivamente al asistente de creación.
 18. Eliminar un mueble y Ctrl+Z. **Esperado:** vuelve (con lo que tuviera
     encima). Mover una ventana y Ctrl+Z: vuelve a su offset.
 
@@ -77,6 +107,24 @@ Sobre la app servida con `npm run dev` (http://localhost:5173).
 22. Cortar la conexión durante un guardado y recargar esa misma pestaña.
     **Esperado:** el borrador reaparece y se reintenta la misma petición al
     reconectar, sin duplicar muebles ni entradas de edición ya confirmadas.
-23. Crear o cargar un plano en L e intentar enviar un encargo. **Esperado:**
+23. Crear o cargar un plano en L, U, T o diagonal e intentar enviar un encargo. **Esperado:**
     se explica el requisito de plano rectangular y se conserva el plano
     manual; no se envía al agente una geometría diferente.
+
+## Zonificación conversacional
+
+- Con el servicio conectado y una habitación rectangular, pedir un espacio con
+  varios usos. Verificar líneas discontinuas legibles y nombres directamente
+  sobre el suelo 3D, también al orbitar y acercar. No son tabiques físicos.
+- Las zonas aparecen antes de terminar el amueblado. Los agentes arrancan
+  automáticamente en paralelo sin botones «Amueblar» ni otro mensaje del usuario.
+  El chat informa del estado de cada zona; el juez actúa después del conjunto.
+- Comprobar que cada mueble permanece dentro de su zona y que pedir cambios en
+  una zona conserva las demás. Un mueble que no cabe se rechaza; no se coloca
+  en la zona vecina. También se protegen los muebles apoyados.
+- Recargar: se recuperan reparto y resultados del servicio. Cambiar dimensiones
+  o aperturas: desaparece el reparto anterior y puede regenerarse.
+- Detener o desconectar durante el trabajo: se cancelan todos los agentes y
+  vuelve la distribución confirmada, sin muebles de un turno incompleto.
+- Alcance actual: habitación y zonas rectangulares; ejecución paralela. El
+  guardado local de proyecto no sustituye la persistencia de zonas del servicio.

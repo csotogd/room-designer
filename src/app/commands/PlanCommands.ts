@@ -85,3 +85,24 @@ export class AddOpeningCommand implements Command {
     this.project.removeOpening(this.wall, this.opening)
   }
 }
+
+export class ResizeOpeningCommand implements Command {
+  private readonly fromWidth: number
+
+  constructor(
+    private readonly project: Project,
+    private readonly wall: Wall,
+    private readonly opening: Opening,
+    private readonly toWidth: number,
+  ) {
+    this.fromWidth = opening.width
+  }
+
+  execute(): void {
+    this.project.resizeOpening(this.wall, this.opening, this.toWidth)
+  }
+
+  undo(): void {
+    this.project.resizeOpening(this.wall, this.opening, this.fromWidth)
+  }
+}

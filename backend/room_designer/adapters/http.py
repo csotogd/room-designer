@@ -222,6 +222,7 @@ def create_designer_app(
     allowed_origins=(),
     lifespan=None,
     judge_target: float = 7.0,
+    fresh_local_sessions: bool = False,
     rate_limit: RateLimiter | None = None,
 ):
     app, metrics = base_app(lifespan, rate_limit)
@@ -265,6 +266,10 @@ def create_designer_app(
             return
         if not token and not allowed_origin(socket.headers.get("origin"), allowed_origins):
             await socket.close(4403, "origin no permitido")
+            return
+        local_page = socket.query_params.get("localPage") if fresh_local_sessions else None
+        if local_page is not None and not 1 <= len(local_page) <= 128:
+            await socket.close(4400, "sesión local inválida")
             return
         clients.add(socket)
         owner = uuid4().hex
@@ -326,7 +331,7 @@ def create_designer_app(
                             raise ValueError("revision inválida")
                         await workflow.start(
                             owner, brief, request_id, emit, revision, progress=message.get("progress") is True,
-                            activity=message.get("activity") is True
+                            activity=message.get("activity") is True, live_evaluation=message.get("liveEvaluation") is True
                         )
                     elif operation == "edit":
                         revision = message.get("baseRevision")
@@ -338,7 +343,7 @@ def create_designer_app(
                         await socket.send_json(result)
                         if result["type"] == "edit.result":
                             await broadcast_state(socket, result["state"])
-                    elif operation == "judge":
+                    elif operation in ("judge", "judge.preview"):
                         image = message.get("image")
                         run_id, revision = message.get("runId"), message.get("revision")
                         if (
@@ -347,9 +352,10 @@ def create_designer_app(
                             or not isinstance(revision, str)
                         ):
                             raise ValueError("La captura debe incluir image, runId y revision de la respuesta")
-                        accepted = await workflow.capture(
-                            owner, run_id, revision, decode_png(image), request_id
-                        )
+                        if operation == "judge.preview":
+                            accepted = await workflow.capture_preview(owner, run_id, revision, decode_png(image))
+                        else:
+                            accepted = await workflow.capture(owner, run_id, revision, decode_png(image), request_id)
                         if not accepted:
                             await socket.send_json(
                                 {
@@ -409,7 +415,11 @@ def create_designer_app(
 
         try:
             try:
-                await socket.send_json({"type": "state", "state": await session.state()})
+                reset = await workflow.reset_for_page(local_page) if local_page is not None else False
+                initial = await session.state()
+                if reset:
+                    await broadcast_state(socket, initial)
+                await socket.send_json({"type": "state", "state": initial})
             except Exception:
                 await socket.send_json({"type": "error", "error": "Estado de habitación ilegible"})
             while True:

@@ -64,9 +64,7 @@ export class Wall {
 
   /** Desliza una apertura existente a un nuevo offset validado. */
   moveOpening(opening: Opening, offset: number): void {
-    if (!this._openings.includes(opening)) {
-      throw new Error('La apertura no pertenece a esta pared')
-    }
+    this.assertOwns(opening)
     if (!this.canPlaceOpening(opening, offset)) {
       throw new Error('La apertura no cabe en esa posición de la pared')
     }
@@ -76,6 +74,21 @@ export class Wall {
   removeOpening(opening: Opening): void {
     const index = this._openings.indexOf(opening)
     if (index >= 0) this._openings.splice(index, 1)
+  }
+
+  maxOpeningWidth(opening: Opening): number {
+    const ends = this._openings
+      .filter(o => o !== opening && o.offset >= opening.end)
+      .map(o => o.offset)
+    return Math.min(this.length(), ...ends) - opening.offset
+  }
+
+  resizeOpening(opening: Opening, width: number): void {
+    this.assertOwns(opening)
+    if (!Number.isFinite(width) || width <= 0 || width > this.maxOpeningWidth(opening)) {
+      throw new Error('El ancho debe ser positivo y caber en la pared sin solapar otras aperturas')
+    }
+    opening.width = width
   }
 
   /** Centro de la apertura en coordenadas de plano. */
@@ -98,6 +111,12 @@ export class Wall {
   private assertFits(opening: Opening): void {
     if (opening.offset < 0 || opening.end > this.length()) {
       throw new Error('La apertura debe quedar dentro de los límites de la pared')
+    }
+  }
+
+  private assertOwns(opening: Opening): void {
+    if (!this._openings.includes(opening)) {
+      throw new Error('La apertura no pertenece a esta pared')
     }
   }
 }

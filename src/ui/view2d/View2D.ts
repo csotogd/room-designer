@@ -1,3 +1,5 @@
+import type { DesignerZone } from '../../app/designer/actions'
+import { ZONE_COLORS } from '../panels/ZonePlanPanel'
 import { Point2D } from '../../core/geometry/Point2D'
 import type { Project } from '../../core/model/Project'
 import type { Selection, Tool2D } from '../types'
@@ -12,6 +14,7 @@ const SELECTED = '#0058a3'
  */
 export class View2D {
   private readonly ctx: CanvasRenderingContext2D
+  private zones: readonly DesignerZone[] = []
   private scale = 80
   private offsetX = 120
   private offsetY = 100
@@ -33,7 +36,13 @@ export class View2D {
   setProject(project: Project): void {
     this.unsubscribe?.()
     this.project = project
+    this.zones = []
     this.subscribe()
+    this.draw()
+  }
+
+  setZones(zones: readonly DesignerZone[]): void {
+    this.zones = zones
     this.draw()
   }
 
@@ -45,6 +54,27 @@ export class View2D {
 
   setSelectionProvider(provider: () => Selection | null): void {
     this.getSelection = provider
+  }
+
+  pixelsToMeters(pixels: number): number { return pixels / this.scale }
+
+  frameRoom(): void {
+    const points = this.project.floorPlan.walls.flatMap(w => [w.start, w.end])
+    if (!points.length) return
+    const minX = Math.min(...points.map(p => p.x))
+    const maxX = Math.max(...points.map(p => p.x))
+    const minY = Math.min(...points.map(p => p.y))
+    const maxY = Math.max(...points.map(p => p.y))
+    this.scale = Math.max(5, Math.min(120, (this.canvas.clientWidth - 160) / Math.max(maxX - minX, 1),
+      (this.canvas.clientHeight - 140) / Math.max(maxY - minY, 1)))
+    this.offsetX = this.canvas.clientWidth / 2 - (minX + maxX) / 2 * this.scale
+    this.offsetY = this.canvas.clientHeight / 2 - (minY + maxY) / 2 * this.scale
+    this.draw()
+  }
+
+  cancelTool(): void {
+    this.tool?.cancel()
+    this.draw()
   }
 
   resize(): void {
@@ -77,10 +107,31 @@ export class View2D {
     ctx.clearRect(0, 0, w, h)
     this.drawGrid(w, h)
     this.drawFloor()
+    this.drawZones()
     for (const wall of this.project.floorPlan.walls) this.drawWall(wall)
     this.drawFurniture()
     this.drawLights()
     this.tool?.drawOverlay(ctx, this.toScreen, this.scale)
+  }
+
+  private drawZones(): void {
+    if (!this.zones.length) return
+    const ctx = this.ctx
+    ctx.save()
+    for (const [index, zone] of this.zones.entries()) {
+      const [x, y] = this.toScreen(new Point2D(zone.x, zone.z))
+      const color = ZONE_COLORS[index % ZONE_COLORS.length]!
+      ctx.fillStyle = color + '30'
+      ctx.fillRect(x, y, zone.w * this.scale, zone.d * this.scale)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([6, 4])
+      ctx.strokeRect(x, y, zone.w * this.scale, zone.d * this.scale)
+      ctx.fillStyle = color
+      ctx.font = '600 12px sans-serif'
+      ctx.fillText(zone.name, x + 8, y + 18)
+    }
+    ctx.restore()
   }
 
   private drawGrid(w: number, h: number): void {
@@ -221,6 +272,7 @@ export class View2D {
 
   private bindEvents(): void {
     this.canvas.addEventListener('pointerdown', (e) => {
+      this.canvas.focus({ preventScroll: true })
       if (e.button === 1 || e.button === 2) {
         this.panning = true
         this.lastPointer = [e.clientX, e.clientY]
@@ -235,6 +287,7 @@ export class View2D {
     })
     this.canvas.addEventListener('pointercancel', () => {
       this.panning = false
+      this.cancelTool()
     })
     this.canvas.addEventListener('pointermove', (e) => {
       if (this.panning) {
@@ -256,6 +309,13 @@ export class View2D {
       this.draw()
     })
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+    this.canvas.addEventListener('keydown', event => {
+      if (this.tool?.onKey?.(event.key)) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.draw()
+      }
+    })
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault()
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1

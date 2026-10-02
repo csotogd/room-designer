@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from room_designer.domain.room import Json
 
-SceneSink = Callable[[Json], Awaitable[None]]
+SceneSink = Callable[[Json], Awaitable[Json | None]]
 _current: ContextVar["SceneProgress | None"] = ContextVar("scene_progress", default=None)
 SCENE_FIELDS = ("room", "openings", "environment", "zones", "zoneResults")
 
@@ -17,13 +17,14 @@ class SceneProgress:
     def __init__(self, state: Json, sink: SceneSink):
         self.state, self.sink = deepcopy(state), sink
         self.lock = asyncio.Lock()
+        self.feedback: Json | None = None
 
     async def report(self, state: Json) -> None:
         async with self.lock:
             self.state = deepcopy(state)
-            await self.sink(deepcopy(self.state))
+            self.feedback = await self.sink(deepcopy(self.state))
 
-    async def merge(self, before: Json, after: Json) -> None:
+    async def merge(self, before: Json, after: Json) -> Json | None:
         async with self.lock:
             previous = deepcopy(self.state)
             for key in SCENE_FIELDS:
@@ -42,7 +43,8 @@ class SceneProgress:
                     combined[uid] = deepcopy(item)
             self.state["items"] = list(combined.values())
             if self.state != previous:
-                await self.sink(deepcopy(self.state))
+                self.feedback = await self.sink(deepcopy(self.state))
+            return deepcopy(self.feedback)
 
 
 @contextmanager
@@ -55,7 +57,8 @@ def scene_progress(state: Json, sink: SceneSink | None):
         _current.reset(token)
 
 
-async def publish_scene(before: Json, after: Json) -> None:
+async def publish_scene(before: Json, after: Json) -> Json | None:
     progress = _current.get()
     if progress is not None:
-        await progress.merge(before, after)
+        return await progress.merge(before, after)
+    return None

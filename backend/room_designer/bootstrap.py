@@ -92,6 +92,7 @@ def designer_app(env=None):
         tuple(filter(None, env.get("DESIGNER_ALLOWED_ORIGINS", "").split(","))),
         lifespan,
         judge_target=float(env.get("DESIGNER_JUDGE_TARGET", "7")),
+        fresh_local_sessions=env.get("DESIGNER_LOCAL_FRESH_SESSIONS") == "1",
         rate_limit=RateLimiter(int(env.get("RATE_LIMIT_PER_MINUTE", "120"))),
     )
 

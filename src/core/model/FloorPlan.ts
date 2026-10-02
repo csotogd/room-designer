@@ -63,6 +63,46 @@ export class FloorPlan {
     return this._walls.flatMap((w) => [...w.openings])
   }
 
+  /** Ensaya la geometría sin cambiar las paredes ni sus aperturas originales. */
+  withWallGeometry(wall: Wall, start: Point2D, end: Point2D): FloorPlan {
+    if (!this._walls.includes(wall)) throw new Error('La pared no pertenece a este plano')
+    const replace = (point: Point2D) => point.equals(wall.start) ? start : point.equals(wall.end) ? end : point
+    const candidate = new FloorPlan()
+    for (const original of this._walls) {
+      const next = new Wall(replace(original.start), replace(original.end), original.thickness, original.height, original.id)
+      if (![next.start.x, next.start.y, next.end.x, next.end.y].every(Number.isFinite) || next.length() < 0.3) {
+        throw new Error('La pared debe medir al menos 30 cm y tener coordenadas finitas')
+      }
+      for (const opening of original.openings) next.addOpening(opening)
+      candidate.addWall(next)
+    }
+    const polygon = candidate.floorPolygon()
+    const originalPolygon = this.floorPolygon()
+    if (!polygon || !originalPolygon || winding(polygon) * winding(originalPolygon) <= 0) {
+      throw new Error('La habitación debe conservar un contorno cerrado sin invertir sus paredes')
+    }
+    for (const axis of ['x', 'y'] as const) {
+      const values = polygon.vertices.map(p => p[axis])
+      if (Math.max(...values) - Math.min(...values) > 30) throw new Error('La habitación no puede superar 30 m')
+    }
+    for (let i = 0; i < candidate.walls.length; i++) {
+      const a = candidate.walls[i]!
+      for (const b of candidate.walls.slice(i + 1)) {
+        if ([a.start, a.end].some(p => p.equals(b.start) || p.equals(b.end))) continue
+        if (a.segment().intersects(b.segment())) throw new Error('Las paredes no pueden cruzarse')
+      }
+    }
+    return candidate
+  }
+
+  reshapeWall(wall: Wall, start: Point2D, end: Point2D): void {
+    const candidate = this.withWallGeometry(wall, start, end)
+    this._walls.forEach((original, index) => {
+      const next = candidate.walls[index]!
+      original.moveTo(next.start, next.end)
+    })
+  }
+
   /** Pared más cercana a un punto dentro de una tolerancia, o null. */
   wallAt(point: Point2D, tolerance: number): Wall | null {
     let best: Wall | null = null
@@ -110,4 +150,11 @@ export class FloorPlan {
     }
     return null
   }
+}
+
+function winding(polygon: Polygon): number {
+  return polygon.vertices.reduce((area, point, i, points) => {
+    const next = points[(i + 1) % points.length]!
+    return area + point.x * next.y - next.x * point.y
+  }, 0)
 }

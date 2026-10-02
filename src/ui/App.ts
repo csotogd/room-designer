@@ -1,3 +1,4 @@
+import type { DesignerZone } from '../app/designer/actions'
 import { Project } from '../core/model/Project'
 import { FloorPlan } from '../core/model/FloorPlan'
 import type { LightPoint } from '../core/model/LightPoint'
@@ -29,6 +30,7 @@ import { CatalogPanel } from './panels/CatalogPanel'
 import { CartPanel } from './panels/CartPanel'
 import { ChatPanel } from './panels/ChatPanel'
 import { CreateRoomModal } from './panels/CreateRoomModal'
+import { OpeningWidthControl } from './panels/OpeningWidthControl'
 import type { ToolContext } from './types'
 
 /** Orquestador de la experiencia 3D-first: topbar, catálogo, escena e inspector. */
@@ -37,6 +39,7 @@ export class App {
   private readonly stack = new CommandStack()
   private readonly catalog: FurnitureCatalog
   private readonly view3d: View3D
+  private zones: readonly DesignerZone[] = []
   private view2d: View2D | null = null
   private readonly catalogPanel: CatalogPanel
   private readonly cartPanel: CartPanel
@@ -44,6 +47,7 @@ export class App {
   private readonly modal: CreateRoomModal
   private readonly repository: ProjectRepository = new LocalStorageProjectRepository(localStorage)
   private selection: Selectable | null = null
+  private openingWidthControl: OpeningWidthControl | null = null
   private hintTimer: number | undefined
   private unsubscribe: () => void
 
@@ -78,6 +82,11 @@ export class App {
     )
     this.cartPanel = new CartPanel(root, this.project)
     this.chatPanel = new ChatPanel(root, {
+      showZones: (zones) => {
+        this.zones = zones
+        this.view2d?.setZones(zones)
+        this.view3d.setZones(zones)
+      },
       apply: (actions) => {
         const report = applyDesignerActions(
           {
@@ -113,6 +122,7 @@ export class App {
     this.onResize()
     this.refreshUndoButtons()
     this.refreshRoomMeta()
+    this.modal.show()
   }
 
   /** Instantánea del estado para QA automatizado (no usar en producción). */
@@ -135,6 +145,8 @@ export class App {
   // ── Inspector contextual ─────────────────────────────────────────────────
 
   private renderInspector(): void {
+    this.openingWidthControl?.dispose()
+    this.openingWidthControl = null
     const panel = this.el('#inspector')
     panel.innerHTML = ''
     if (!this.selection) {
@@ -165,6 +177,9 @@ export class App {
     } else if (this.selection.type === 'opening') {
       const { wall, opening } = this.selection
       panel.append(this.objName(opening.kind === 'door' ? 'Puerta' : 'Ventana'))
+      this.openingWidthControl = new OpeningWidthControl(this.root, this.project, wall, opening,
+        this.stack, () => this.refreshUndoButtons())
+      panel.append(this.openingWidthControl.element)
       const tip = this.root.createElement('span')
       tip.textContent = 'Arrástrala por la pared'
       tip.style.color = 'var(--ink-soft)'
@@ -330,11 +345,13 @@ export class App {
   private undo(): void {
     this.stack.undo()
     this.view3dSelect(null)
+    this.refreshUndoButtons()
   }
 
   private redo(): void {
     this.stack.redo()
     this.view3dSelect(null)
+    this.refreshUndoButtons()
   }
 
   // ── Plano 2D (overlay) ───────────────────────────────────────────────────
@@ -342,6 +359,7 @@ export class App {
   private bindPlanOverlay(): void {
     const overlay = this.el('#plan-overlay')
     const setPlanOpen = (open: boolean): void => {
+      if (!open) this.view2d?.cancelTool()
       overlay.hidden = !open
       for (const [id, active] of [['#view-3d', !open], ['#plan-toggle', open]] as const) {
         this.el(id).classList.toggle('active', active)
@@ -351,6 +369,7 @@ export class App {
       if (open) {
         this.ensureView2D()
         this.view2d!.resize()
+        this.view2d!.frameRoom()
       }
     }
     this.el<HTMLButtonElement>('#plan-toggle').addEventListener('click', () => setPlanOpen(overlay.hidden))
@@ -360,12 +379,8 @@ export class App {
       button.addEventListener('click', () => {
         this.ensureView2D()
         const ctx = this.toolContext()
-        this.view2d!.setTool(
-          button.dataset.plantool === 'wall' ? new WallTool(ctx) : new SelectTool(ctx),
-        )
-        for (const b of this.root.querySelectorAll('[data-plantool]')) {
-          b.classList.toggle('active', b === button)
-        }
+        this.view2d!.setTool(button.dataset.plantool === 'wall' ? new WallTool(ctx) : new SelectTool(ctx))
+        for (const b of this.root.querySelectorAll('[data-plantool]')) b.classList.toggle('active', b === button)
       })
     }
   }
@@ -373,6 +388,7 @@ export class App {
   private ensureView2D(): void {
     if (this.view2d) return
     this.view2d = new View2D(this.el<HTMLCanvasElement>('#canvas2d'), this.project)
+    this.view2d.setZones(this.zones)
     this.view2d.setTool(new SelectTool(this.toolContext()))
   }
 
@@ -426,6 +442,7 @@ export class App {
     this.stack.clear()
     this.view3dSelect(null)
     this.view3d.setProject(project)
+    this.zones = []
     this.view2d?.setProject(project)
     this.cartPanel.setProject(project)
     this.refreshUndoButtons()

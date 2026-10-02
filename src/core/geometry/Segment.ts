@@ -28,4 +28,14 @@ export class Segment {
   distanceToPoint(point: Point2D): number {
     return this.pointAtDistance(this.projectDistance(point)).distanceTo(point)
   }
+
+  intersects(other: Segment): boolean {
+    for (const axis of ['x', 'y'] as const) {
+      if (Math.max(this.start[axis], this.end[axis]) < Math.min(other.start[axis], other.end[axis]) ||
+          Math.max(other.start[axis], other.end[axis]) < Math.min(this.start[axis], this.end[axis])) return false
+    }
+    const side = (a: Point2D, b: Point2D, p: Point2D) => b.sub(a).perp().dot(p.sub(a))
+    return side(this.start, this.end, other.start) * side(this.start, this.end, other.end) <= 0 &&
+      side(other.start, other.end, this.start) * side(other.start, other.end, this.end) <= 0
+  }
 }

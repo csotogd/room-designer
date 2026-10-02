@@ -23,9 +23,11 @@ import type { Wall } from './Wall'
 export type ProjectChangeKind =
   | 'wall-added'
   | 'wall-removed'
+  | 'wall-reshaped'
   | 'opening-added'
   | 'opening-removed'
   | 'opening-moved'
+  | 'opening-resized'
   | 'furniture-added'
   | 'furniture-removed'
   | 'furniture-moved'
@@ -100,6 +102,11 @@ export class Project {
     this.emitChanged('wall-removed')
   }
 
+  reshapeWall(wall: Wall, start: Point2D, end: Point2D): void {
+    this.floorPlan.reshapeWall(wall, start, end)
+    this.emitChanged('wall-reshaped')
+  }
+
   addOpening(wall: Wall, opening: Opening): void {
     wall.addOpening(opening)
     this.emitChanged('opening-added')
@@ -114,6 +121,11 @@ export class Project {
   moveOpening(wall: Wall, opening: Opening, offset: number): void {
     wall.moveOpening(opening, offset)
     this.emitChanged('opening-moved')
+  }
+
+  resizeOpening(wall: Wall, opening: Opening, width: number): void {
+    wall.resizeOpening(opening, width)
+    this.emitChanged('opening-resized')
   }
 
   // ── Muebles ──────────────────────────────────────────────────────────────

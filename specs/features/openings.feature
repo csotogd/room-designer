@@ -28,3 +28,25 @@ Feature: Doors and windows
     And a door at offset 1 with width 0.9
     When I move the wall to run from (0,0) to (0,5)
     Then the door world position is at (0, 1.45)
+
+  Scenario: Resize a door dynamically and undo the gesture
+    Given a door with width 0.9 on a room wall
+    When I preview widths of 1.2 and 1.8 meters and finish resizing
+    Then the door has width 1.8 and keeps its position and identity
+    And one undo restores width 0.9 and redo restores width 1.8
+
+  Scenario: Resizing an opening respects its neighbors and wall ends
+    Given a door followed by a window on the same wall
+    When I widen the door beyond the available space
+    Then the door stops at the window without overlap
+    And without the window it stops at the wall end
+
+  Scenario: Custom opening widths survive saving and loading
+    Given a room with a resized door and window
+    When I save and reload the project
+    Then both openings keep their widths and positions
+
+  Scenario: Resize a selected wizard opening without deleting it
+    Given a wizard room with a door
+    When I select the door and adjust its width control
+    Then the preview and created room contain the wider door

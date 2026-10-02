@@ -54,7 +54,19 @@ export interface DesignerItem {
   supportedBy?: string | null
 }
 
+export interface DesignerZone {
+  id: string
+  name: string
+  x: number
+  z: number
+  w: number
+  d: number
+}
+
 export interface DesignerRoomState {
+  zones?: DesignerZone[]
+  zoneResults?: Record<string, { status: 'ready' | 'review' | 'furnishing'; reply: string }>
+
   version: 1
   revision?: string
   room: DesignerRoomSpec | null
@@ -95,6 +107,8 @@ export interface EditResult {
 }
 
 export interface DesignerScore extends DesignerVerdict {
+  preview?: boolean
+  step?: number
   mean: number
   at: string
   target: number

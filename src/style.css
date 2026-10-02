@@ -303,12 +303,16 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
 #plan-tools button.active { background: var(--accent-wash); color: var(--accent); }
 #plan-close { margin-left: auto; }
 #canvas2d { flex: 1; min-height: 0; width: 100%; cursor: crosshair; }
+#wall-inspector h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+#wall-inspector label { display: grid; gap: 8px; font-size: 11px; }
+#wall-message { margin-top: 10px; }
 #hint { position: absolute; left: calc(var(--catalog-width) + (100% - var(--catalog-width) - var(--chat-width)) / 2); bottom: 130px; transform: translateX(-50%); background: #191919f2; color: white; padding: 10px 16px; border-radius: 2px; font-size: 11px; line-height: 1.6; pointer-events: none; z-index: 19; width: max-content; max-width: calc(100% - var(--catalog-width) - var(--chat-width) - 32px); text-align: center; box-shadow: var(--shadow-md); }
 #hint:empty { display: none; }
 
 /* Room creation */
 #modal-backdrop { position: fixed; inset: 0; background: #19191947; backdrop-filter: blur(4px); display: grid; place-items: center; z-index: 50; padding: 20px; }
-#create-modal { position: relative; width: 460px; max-width: 100%; max-height: calc(100dvh - 40px); overflow-y: auto; background: white; border: 1px solid #ffffff80; border-radius: 20px; padding: 38px 36px 30px; box-shadow: var(--shadow-lg); animation: modal-in .2s ease; }
+#create-modal { position: relative; width: 1040px; max-width: 100%; max-height: calc(100dvh - 40px); overflow-y: auto; background: white; border: 1px solid #ffffff80; border-radius: 20px; padding: 26px 28px 20px; box-shadow: var(--shadow-lg); animation: modal-in .2s ease; }
+#create-modal[data-step='2'] { width: 600px; }
 #modal-close { position: absolute; top: 12px; right: 12px; color: var(--ink-soft); }
 @keyframes modal-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .modal-eyebrow { display: flex; align-items: center; justify-content: space-between; padding-right: 16px; gap: 10px; margin-bottom: 24px; }
@@ -316,10 +320,10 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
 .step-dots { display: flex; gap: 4px; }
 .step-dots i { width: 20px; height: 3px; border-radius: 3px; background: var(--line); }
 .step-dots i.on { background: var(--accent); }
-#create-modal h2 { max-width: 310px; font-size: 27px; font-weight: 500; letter-spacing: -1px; line-height: 1.25; }
+#create-modal h2 { font-size: 27px; font-weight: 500; letter-spacing: -1px; line-height: 1.25; }
 .modal-sub { margin-top: 12px; margin-bottom: 26px; font-size: 12px; color: var(--ink-soft); line-height: 1.8; }
-#shape-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
-.shape-card { position: relative; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 18px 12px 14px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 12px; font-weight: 500; color: var(--ink-soft); }
+#shape-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 20px; }
+.shape-card { position: relative; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 14px 6px 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 11px; font-weight: 500; color: var(--ink-soft); text-align: center; }
 .shape-card svg { width: 62px; height: 44px; }
 .shape-card:hover { border-color: var(--accent); color: var(--accent); }
 .shape-card.active { border-color: var(--accent); color: var(--accent); background: var(--accent-wash); box-shadow: 0 0 0 1px var(--accent); }
@@ -350,6 +354,58 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
 .wizard-opening { cursor: pointer; }
 .wizard-actions { display: flex; gap: 10px; }
 .wizard-actions .primary-btn { flex: 1; }
+
+/* Medidas y previsualización compartidas por las plantas del asistente. */
+#room-sizes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
+#room-sizes button { padding: 9px 5px; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; }
+#room-sizes button span { display: block; color: var(--ink-soft); font-size: 10px; margin-top: 4px; }
+#room-sizes button.active { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); }
+#create-modal .dim-grid { grid-template-columns: repeat(3, 1fr); margin-bottom: 16px; gap: 12px; }
+#room-area { color: var(--accent); font-weight: 600; }
+.wizard-message { color: var(--danger); font-size: 11px; line-height: 1.5; margin: 10px 0; }
+.wizard-message:empty { margin: 12px 0; }
+#wizard-opening-editor { border: 1px solid var(--line); background: var(--accent-wash); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+#wizard-opening-editor strong { display: block; font-size: 12px; font-weight: 500; margin-bottom: 10px; }
+#wizard-opening-editor .link-btn { width: auto; color: var(--danger); padding: 5px 0; }
+.opening-width-control { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink-soft); }
+.opening-width-control input[type='range'] { flex: 1; min-width: 60px; accent-color: var(--accent); }
+.opening-width-control input[type='number'] { width: 66px; padding: 6px; background: white; border: 1px solid var(--line-strong); border-radius: 6px; font-variant-numeric: tabular-nums; }
+.opening-resize-handle { fill: var(--accent); stroke: white; stroke-width: 0.05; cursor: grab; touch-action: none; }
+.opening-resize-handle:active { cursor: grabbing; }
+#wizard-plan { touch-action: none; }
+.wizard-opening:focus { stroke: var(--accent); stroke-opacity: 0.25; outline: none; }
+.wizard-footer, #wizard-step-2 .wizard-actions { position: sticky; bottom: -24px; padding: 12px 0 4px; background: white; z-index: 1; }
+.creation-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; height: min(52vh, 440px); min-height: 340px; gap: 24px; }
+.creation-drawing { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #f8f7f4; }
+.draft-tools { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: white; border-bottom: 1px solid var(--line); font-size: 11px; }
+.draft-tools output { margin-right: auto; }
+.draft-tools button { font-size: 10px; padding: 5px; }
+#creation-canvas { flex: 1; min-height: 0; width: 100%; height: 0; touch-action: none; cursor: grab; }
+#creation-canvas:active { cursor: grabbing; }
+#draft-hint { min-height: 35px; padding: 8px 12px; font-size: 10px; line-height: 1.6; color: var(--ink-soft); background: white; }
+.creation-options { overflow-y: auto; padding: 0 4px 8px; }
+.creation-options > .eyebrow { display: block; margin-bottom: 10px; }
+.creation-options #shape-cards { grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 14px; }
+.creation-options .shape-card { padding: 10px 3px; font-size: 10px; }
+.creation-options .shape-card svg { width: 44px; height: 30px; }
+.creation-options #room-sizes { grid-template-columns: repeat(2, 1fr); margin-bottom: 16px; }
+#draft-dimensions summary { cursor: pointer; font-size: 11px; color: var(--ink-soft); margin-bottom: 12px; }
+#create-modal .creation-options .dim-grid { grid-template-columns: repeat(2, 1fr); }
+.creation-options #wall-inspector { margin: 0 0 18px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.creation-options #wall-message { font-size: 11px; color: var(--danger); }
+@media (max-width: 720px) {
+  .creation-layout { grid-template-columns: 1fr; height: auto; gap: 18px; }
+  .creation-drawing { height: 330px; }
+  .creation-options { overflow: visible; }
+  .creation-options #shape-cards { grid-template-columns: repeat(5, 1fr); }
+  .creation-options #room-sizes { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 520px) {
+  #create-modal { padding: 30px 18px 20px; }
+  #shape-cards { grid-template-columns: repeat(3, 1fr); }
+  #room-sizes { grid-template-columns: repeat(2, 1fr); }
+  #create-modal .dim-grid { grid-template-columns: repeat(2, 1fr); }
+}
 
 /* On smaller screens, sidebars become drawers, leaving a usable canvas. */
 @media (max-width: 1199px) {
@@ -435,6 +491,17 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
 #chat-sync { padding: 6px 18px; font-size: 11px; color: var(--ink-soft); }
 #chat-sync button { margin: 6px 6px 0 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); cursor: pointer; }
 
+/* Distribución funcional compartida con el agente. */
+#chat-zones { padding: 12px 18px; border-bottom: 1px solid #e3e1db; max-height: 28vh; overflow: auto; flex-shrink: 0; }
+#chat-zones h3 { margin: 0 0 6px; font-size: 14px; }
+#chat-zones p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: #65706d; }
+#chat-zones ul { list-style: none; margin: 0; padding: 0; }
+#chat-zones li { border-left: 3px solid var(--zone-color); padding: 6px 0 6px 8px; margin: 7px 0; }
+#chat-zones li > span { float: right; font-size: 10px; padding: 5px; color: #65706d; }
+#chat-zones li > p { margin: 4px 0; }
+
+#chat-zones strong { font-size: 12px; font-weight: 500; }
+
 /* Conversación de agentes: nombre visible, voz diferenciada y datos secundarios plegados. */
 .agent-activity { width: 100%; white-space: normal; }
 .chat-bubble.agent-activity::before { display: none; }
@@ -454,3 +521,11 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
 .activity-data { margin-top: 6px; }
 .activity-data summary { cursor: pointer; color: var(--ink-soft); font-size: 10px; }
 .activity-data pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; line-height: 1.5; margin: 8px 0 0; }
+
+/* Historial de evaluaciones reales: gráfico compacto y detalle bajo demanda. */
+.evaluation-history { display: grid; gap: 6px; margin-top: 12px; font-size: 11px; }
+.evaluation-history svg { display: block; width: 100%; height: 64px; color: #49786b; }
+.evaluation-history summary { cursor: pointer; }
+.evaluation-history > details { max-height: 200px; overflow-y: auto; }
+.evaluation-row { padding: 10px 0; border-top: 1px solid var(--border, #deded8); }
+.evaluation-row p { margin: 6px 0 0; line-height: 1.45; }

@@ -12,7 +12,7 @@ export abstract class Opening {
 
   constructor(
     public offset: number,
-    readonly width: number,
+    public width: number,
     readonly height: number,
     readonly sillHeight: number,
     id?: string,

@@ -2,6 +2,7 @@ import json
 
 import httpx
 import pytest
+from conftest import scenario
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
@@ -73,6 +74,7 @@ def test_auto_alias_and_role_overrides():
     assert config.model == "gemini-2.5-flash"
 
 
+@scenario("Provider tool calls furnish only the assigned zone")
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
 async def test_litellm_adapter_tool_call_roundtrip(provider, design_tools, monkeypatch):
     """Real ADK and LiteLlm conversion; only the remote completion is substituted."""
@@ -120,7 +122,9 @@ async def test_litellm_adapter_tool_call_roundtrip(provider, design_tools, monke
     monkeypatch.setattr(LiteLLMClient, "acompletion", completion)
     config = ModelConfig(provider, "gpt-4.1" if provider == "openai" else "claude-sonnet-4-6", "dummy")
     result = await AdkRuntime(create_model(config)).run(
-        "silla", design_tools.editor.state, design_tools.functions()
+        "silla", {**design_tools.editor.state, "activeZone": {
+            "id": "seating", "name": "Asientos", "x": 0, "z": 0, "w": 5, "d": 4,
+        }}, design_tools.functions()
     )
     assert result == "He colocado una silla."
     assert design_tools.editor.state["items"][0]["productId"] == "chair"
@@ -128,9 +132,12 @@ async def test_litellm_adapter_tool_call_roundtrip(provider, design_tools, monke
     assert requests[0]["model"].startswith(provider + "/")
     assert requests[0]["api_key"] == "dummy"
     assert {t["function"]["name"] for t in requests[0]["tools"]} >= {
-        "set_room",
+        "apply_furniture_changes",
         "place_furniture",
         "search_catalog",
+    }
+    assert not {"set_room", "set_zones", "furnish_zones"} & {
+        t["function"]["name"] for t in requests[0]["tools"]
     }
     for name in ("place_furniture", "move_furniture"):
         function = next(t["function"] for t in requests[0]["tools"] if t["function"]["name"] == name)
@@ -166,7 +173,9 @@ async def test_gemini_adapter_tool_call_roundtrip(design_tools, monkeypatch):
 
     monkeypatch.setattr(AsyncModels, "generate_content", generate)
     result = await AdkRuntime(create_model(ModelConfig("gemini", "gemini-2.5-flash", "dummy"))).run(
-        "silla", design_tools.editor.state, design_tools.functions()
+        "silla", {**design_tools.editor.state, "activeZone": {
+            "id": "seating", "name": "Asientos", "x": 0, "z": 0, "w": 5, "d": 4,
+        }}, design_tools.functions()
     )
     assert result == "He colocado una silla."
     assert design_tools.editor.state["items"][0]["productId"] == "chair"

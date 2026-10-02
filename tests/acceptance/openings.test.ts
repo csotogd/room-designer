@@ -4,10 +4,67 @@ import { Point2D } from '../../src/core/geometry/Point2D'
 import { Wall } from '../../src/core/model/Wall'
 import { Door } from '../../src/core/model/Door'
 import { Window } from '../../src/core/model/Window'
+import { FloorPlan } from '../../src/core/model/FloorPlan'
+import { Project } from '../../src/core/model/Project'
+import { CommandStack } from '../../src/app/commands/CommandStack'
+import { OpeningResize } from '../../src/app/editor/OpeningResize'
+import { serializeProject, deserializeProject } from '../../src/app/serialization/ProjectSerializer'
+import { DefaultCatalog } from '../../src/app/catalog/DefaultCatalog'
 
 const wall = () => new Wall(new Point2D(0, 0), new Point2D(5, 0))
 
+function roomWithDoor() {
+  const project = new Project(FloorPlan.rectangle(5, 4))
+  const wall = project.floorPlan.walls[0]!
+  const door = new Door(1, 0.9)
+  project.addOpening(wall, door)
+  const stack = new CommandStack()
+  return { project, wall, door, stack, resize: new OpeningResize(project, wall, door, stack) }
+}
+
 feature('Doors and windows', () => {
+  scenario('Resize a door dynamically and undo the gesture', () => {
+    const { door, wall, stack, resize } = roomWithDoor()
+    resize.preview(1.2)
+    expect(door.width).toBe(1.2)
+    resize.preview(1.8)
+    resize.commit()
+    expect(door.width).toBe(1.8)
+    expect(door.offset).toBe(1)
+    expect(wall.openings[0]).toBe(door)
+    stack.undo()
+    expect(door.width).toBe(0.9)
+    expect(stack.canUndo()).toBe(false)
+    stack.redo()
+    expect(door.width).toBe(1.8)
+  })
+
+  scenario('Resizing an opening respects its neighbors and wall ends', () => {
+    const { project, wall, door, resize } = roomWithDoor()
+    const window = new Window(3, 1)
+    project.addOpening(wall, window)
+    resize.preview(99)
+    resize.commit()
+    expect(door.end).toBe(window.offset)
+    project.removeOpening(wall, window)
+    resize.preview(99)
+    resize.commit()
+    expect(door.end).toBe(wall.length())
+  })
+
+  scenario('Custom opening widths survive saving and loading', () => {
+    const { project, wall, resize } = roomWithDoor()
+    resize.preview(1.5)
+    resize.commit()
+    const window = new Window(3, 1)
+    project.addOpening(wall, window)
+    project.resizeOpening(wall, window, 1.7)
+    const restored = deserializeProject(serializeProject(project), new DefaultCatalog())
+    expect(restored.floorPlan.walls[0]!.openings.map(o => [o.kind, o.offset, o.width])).toEqual([
+      ['door', 1, 1.5], ['window', 3, 1.7],
+    ])
+  })
+
   scenario('Place a door on a wall', () => {
     const w = wall()
     const door = new Door(1, 0.9)

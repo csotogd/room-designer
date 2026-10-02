@@ -5,6 +5,34 @@ como fuente de verdad del comportamiento. Estas reglas mandan sobre cualquier
 atajo que parezca más rápido, y aplican igual a Claude Code, a Codex y a una
 persona.
 
+## Seguimiento obligatorio en el tablero
+
+`tablero.html` es el Jira local del proyecto. **Cada trabajo se registra ahí**:
+funcionalidades, errores, investigación, refactors, documentación y validación.
+
+- Antes de empezar, crea o localiza la tarea en el bloque JSON
+  `<script id="tracker-data" type="application/json">` del HTML. Reutiliza una
+  tarea existente si describe el mismo trabajo; no dupliques registros.
+- Usa `todo` para lo pendiente, `progress` al comenzar y `done` solo cuando
+  esté terminado y haya superado las comprobaciones aplicables. Actualiza el
+  tablero también cuando cambie el alcance o se descubra trabajo pendiente.
+- Cada tarea conserva `id` único y estable, `title`, `description`, `owner`,
+  `status`, `priority` (`high`, `medium` o `low`) y `updatedAt` en UTC ISO 8601.
+  Describe el resultado esperado y, al terminar, el resultado real y su
+  validación. Si hay un bloqueo, anótalo en la descripción y no marques `done`.
+- Los agentes editan el JSON del **archivo del repositorio** en el mismo
+  cambio que el trabajo; no basta con actualizar el almacenamiento del
+  navegador. Conserva las tareas ajenas y su historial descriptivo. Escapa
+  cualquier `<` dentro de cadenas JSON como `\u003c` para no cerrar el script.
+- El navegador combina el archivo con su guardado local por `id` y
+  `updatedAt`; gana la revisión más reciente (a igualdad, la del archivo).
+  Para llevar cambios del navegador al repositorio, pulsa **Descargar HTML**
+  y reemplaza `tablero.html` con esa copia. Abrir el tablero no reescribe el
+  archivo del disco.
+
+Antes de dar una tarea por terminada, comprueba que el tablero refleja su
+estado real. Esta obligación se suma al ciclo TDD y a las puertas de calidad.
+
 ## El ciclo
 
 Ningún cambio de comportamiento empieza por el código de producción.

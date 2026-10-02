@@ -1,8 +1,14 @@
-import { FloorPlan } from '../../core/model/FloorPlan'
+import type { FloorPlan } from '../../core/model/FloorPlan'
+import { Project } from '../../core/model/Project'
 import type { Opening } from '../../core/model/Opening'
 import type { Wall } from '../../core/model/Wall'
 import { Point2D } from '../../core/geometry/Point2D'
 import { addWizardOpening } from '../../app/editor/RoomWizard'
+import { createRoomPlan, type RoomDimensions, type RoomShape } from '../../app/editor/RoomShapes'
+import { CommandStack } from '../../app/commands/CommandStack'
+import { OpeningWidthControl } from './OpeningWidthControl'
+import { RoomDraftView } from './RoomDraftView'
+import { AddOpeningCommand, RemoveOpeningCommand } from '../../app/commands/PlanCommands'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -11,10 +17,17 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  * 1) forma y medidas; 2) puertas y ventanas sobre el plano en planta.
  */
 export class CreateRoomModal {
-  private shape: 'rect' | 'l' = 'rect'
+  private shape: RoomShape = 'rect'
   private openingKind: 'door' | 'window' = 'door'
   private plan: FloorPlan | null = null
   private previousFocus: HTMLElement | null = null
+  private draftView: RoomDraftView | null = null
+  private project: Project | null = null
+  private readonly stack = new CommandStack()
+  private selected: { wall: Wall; opening: Opening } | null = null
+  private widthControl: OpeningWidthControl | null = null
+  private unsubscribe: (() => void) | null = null
+  private resizePointer: number | null = null
 
   constructor(
     private readonly root: Document,
@@ -22,15 +35,28 @@ export class CreateRoomModal {
   ) {
     for (const card of root.querySelectorAll<HTMLButtonElement>('.shape-card')) {
       card.addEventListener('click', () => {
-        this.shape = card.dataset.shape as 'rect' | 'l'
+        this.shape = card.dataset.shape as RoomShape
         for (const c of root.querySelectorAll('.shape-card')) {
           c.classList.toggle('active', c === card)
           c.setAttribute('aria-pressed', String(c === card))
         }
-        for (const field of root.querySelectorAll<HTMLElement>('.l-only')) {
-          field.hidden = this.shape !== 'l'
+        for (const field of root.querySelectorAll<HTMLElement>('.cut-only')) {
+          field.hidden = this.shape === 'rect'
         }
+        root.querySelector('#cut-width-label')!.textContent = this.shape === 't' ? 'Tramo central ancho' : 'Recorte ancho'
+        root.querySelector('#cut-depth-label')!.textContent = this.shape === 't' ? 'Tramo central fondo' : 'Recorte fondo'
+        this.refreshPreview()
       })
+    }
+    for (const button of root.querySelectorAll<HTMLButtonElement>('[data-size]')) {
+      button.addEventListener('click', () => {
+        root.querySelector<HTMLInputElement>('#dim-w')!.value = button.dataset.width!
+        root.querySelector<HTMLInputElement>('#dim-d')!.value = button.dataset.depth!
+        this.refreshPreview()
+      })
+    }
+    for (const input of root.querySelectorAll<HTMLInputElement>('.dim-grid input')) {
+      input.addEventListener('input', () => this.refreshPreview())
     }
     for (const button of root.querySelectorAll<HTMLButtonElement>('#opening-toggle button')) {
       button.addEventListener('click', () => {
@@ -42,9 +68,14 @@ export class CreateRoomModal {
       })
     }
     root.querySelector('#wizard-next')!.addEventListener('click', () => this.toStep2())
-    root.querySelector('#wizard-back')!.addEventListener('click', () => this.showStep(1))
+    root.querySelector('#wizard-back')!.addEventListener('click', () => {
+      this.widthControl?.commit()
+      this.showStep(1)
+      this.draftView?.show()
+    })
     root.querySelector('#create-room')!.addEventListener('click', () => this.create())
     root.querySelector('#modal-close')?.addEventListener('click', () => this.hide())
+    this.bindResizeHandle()
     root.querySelector('#create-modal')?.addEventListener('keydown', (event) => {
       const e = event as KeyboardEvent
       if (e.key === 'Escape') {
@@ -52,8 +83,8 @@ export class CreateRoomModal {
         this.hide()
       }
       if (e.key !== 'Tab') return
-      const controls = [...root.querySelectorAll<HTMLElement>('#create-modal button, #create-modal input')]
-        .filter((el) => !el.closest('[hidden]') && !el.hasAttribute('disabled'))
+      const controls = [...root.querySelectorAll<HTMLElement>('#create-modal button, #create-modal input, #create-modal summary, #create-modal canvas')]
+        .filter(el => !el.closest('[hidden]') && (!el.closest('details:not([open])') || el.tagName === 'SUMMARY') && !el.hasAttribute('disabled'))
       const first = controls[0]
       const last = controls[controls.length - 1]
       if (e.shiftKey && root.activeElement === first) {
@@ -71,9 +102,13 @@ export class CreateRoomModal {
     this.root.querySelector<HTMLElement>('#modal-backdrop')!.hidden = false
     this.setWorkspaceInert(true)
     this.showStep(1)
+    if (!this.plan) this.refreshPreview()
+    else this.draftView?.show()
   }
 
   hide(): void {
+    this.draftView?.cancel()
+    this.widthControl?.commit()
     this.root.querySelector<HTMLElement>('#modal-backdrop')!.hidden = true
     this.setWorkspaceInert(false)
     if (this.previousFocus?.isConnected && !this.previousFocus.closest('[hidden], [inert]')) {
@@ -89,6 +124,7 @@ export class CreateRoomModal {
     this.root.querySelector<HTMLElement>('#wizard-step-1')!.hidden = step !== 1
     this.root.querySelector<HTMLElement>('#wizard-step-2')!.hidden = step !== 2
     this.root.querySelector('#create-modal')?.setAttribute('aria-labelledby', `wizard-title-${step}`)
+    this.root.querySelector('#create-modal')?.setAttribute('data-step', String(step))
     this.root.querySelector<HTMLElement>(step === 1 ? '.shape-card.active' : '#opening-toggle .active')?.focus()
   }
 
@@ -96,26 +132,47 @@ export class CreateRoomModal {
     return Number(this.root.querySelector<HTMLInputElement>(id)!.value)
   }
 
-  private buildPlan(): FloorPlan | null {
-    const width = this.value('#dim-w')
-    const depth = this.value('#dim-d')
-    const height = this.value('#dim-h')
-    if (!(width > 0) || !(depth > 0) || !(height > 0)) return null
-    return this.shape === 'l'
-      ? FloorPlan.lShape(
-          width,
-          depth,
-          Math.min(this.value('#dim-cw'), width - 0.5),
-          Math.min(this.value('#dim-cd'), depth - 0.5),
-          height,
-        )
-      : FloorPlan.rectangle(width, depth, height)
+  private dimensions(): RoomDimensions {
+    return { shape: this.shape, width: this.value('#dim-w'), depth: this.value('#dim-d'),
+      height: this.value('#dim-h'), cutWidth: this.value('#dim-cw'), cutDepth: this.value('#dim-cd') }
+  }
+
+  private refreshPreview(): FloorPlan | null {
+    const error = this.root.querySelector<HTMLElement>('#room-error')!
+    const next = this.root.querySelector<HTMLButtonElement>('#wizard-next')!
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>('[data-size]')) {
+      const active = Number(button.dataset.width) === this.value('#dim-w') && Number(button.dataset.depth) === this.value('#dim-d')
+      button.classList.toggle('active', active)
+      button.setAttribute('aria-pressed', String(active))
+    }
+    try {
+      const plan = createRoomPlan(this.dimensions())
+      this.selectOpening(null)
+      this.unsubscribe?.()
+      this.draftView?.cancel()
+      this.stack.clear()
+      this.plan = plan
+      this.project = new Project(plan, this.value('#dim-h'))
+      if (this.draftView) this.draftView.setProject(this.project)
+      else this.draftView = new RoomDraftView(this.root, this.project, this.stack)
+      this.draftView.show()
+      this.unsubscribe = this.project.events.on('changed', () => {
+        if (!this.root.querySelector<HTMLElement>('#wizard-step-2')!.hidden) this.renderPlanSvg()
+      })
+      error.textContent = ''
+      next.disabled = false
+      return plan
+    } catch (cause) {
+      error.textContent = (cause as Error).message
+      next.disabled = true
+      this.root.querySelector('#room-area')!.textContent = '—'
+      return null
+    }
   }
 
   private toStep2(): void {
-    const plan = this.buildPlan()
-    if (!plan) return
-    this.plan = plan
+    if (!this.plan) return
+    this.root.querySelector('#opening-error')!.textContent = ''
     this.showStep(2)
     this.renderPlanSvg()
   }
@@ -124,23 +181,28 @@ export class CreateRoomModal {
     if (!this.plan) return
     this.hide()
     this.onCreate(this.plan)
+    this.selectOpening(null)
+    this.unsubscribe?.()
+    this.unsubscribe = null
     this.plan = null
   }
 
   // ── Mini-plano SVG del paso 2 ────────────────────────────────────────────
 
   private renderPlanSvg(): void {
+    const plan = this.plan!
     const container = this.root.querySelector<HTMLElement>('#wizard-plan')!
     container.innerHTML = ''
-    const plan = this.plan!
 
     const xs = plan.walls.flatMap((w) => [w.start.x, w.end.x])
     const ys = plan.walls.flatMap((w) => [w.start.y, w.end.y])
     const maxX = Math.max(...xs)
     const maxY = Math.max(...ys)
+    const minX = Math.min(...xs)
+    const minY = Math.min(...ys)
     const pad = 0.8
     const svg = this.root.createElementNS(SVG_NS, 'svg')
-    svg.setAttribute('viewBox', `${-pad} ${-pad} ${maxX + pad * 2} ${maxY + pad * 2}`)
+    svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`)
     svg.setAttribute('id', 'wizard-plan-svg')
 
     const polygon = plan.floorPolygon()
@@ -169,8 +231,7 @@ export class CreateRoomModal {
       line.setAttribute('stroke-linecap', 'square')
       svg.append(line)
 
-      // Zona de clic generosa e invisible sobre la pared (las aperturas van
-      // encima para poder quitarlas con clic).
+      // Zona de clic generosa; las aperturas quedan encima para seleccionarlas.
       const hit = this.root.createElementNS(SVG_NS, 'line')
       hit.setAttribute('x1', String(wall.start.x))
       hit.setAttribute('y1', String(wall.start.y))
@@ -185,8 +246,8 @@ export class CreateRoomModal {
       for (const opening of wall.openings) this.drawOpening(svg, wall, opening, cx, cy)
     }
 
-    this.dimLabel(svg, maxX / 2, maxY + 0.52, this.metros(maxX))
-    this.dimLabel(svg, -0.5, maxY / 2, this.metros(maxY), -90)
+    this.dimLabel(svg, (minX + maxX) / 2, maxY + 0.52, this.metros(maxX - minX))
+    this.dimLabel(svg, minX - 0.5, (minY + maxY) / 2, this.metros(maxY - minY), -90)
     container.append(svg)
   }
 
@@ -278,7 +339,7 @@ export class CreateRoomModal {
       }
     }
 
-    // Zona de clic para eliminar la apertura.
+    // Zona de clic para seleccionar la apertura sin borrarla.
     const hit = this.root.createElementNS(SVG_NS, 'line')
     hit.setAttribute('x1', String(a.x))
     hit.setAttribute('y1', String(a.y))
@@ -287,28 +348,104 @@ export class CreateRoomModal {
     hit.setAttribute('stroke', 'transparent')
     hit.setAttribute('stroke-width', '0.5')
     hit.classList.add('wizard-opening')
+    hit.setAttribute('tabindex', '0')
+    hit.setAttribute('role', 'button')
+    hit.setAttribute('aria-label', `${opening.kind === 'door' ? 'Puerta' : 'Ventana'} de ${this.metros(opening.width)}; editar ancho`)
+    hit.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        this.selectOpening({ wall, opening })
+        this.root.querySelector<HTMLInputElement>('#wizard-opening-editor input')?.focus()
+      }
+    })
     hit.addEventListener('click', (e) => {
       e.stopPropagation()
-      wall.removeOpening(opening)
-      this.renderPlanSvg()
+      this.selectOpening({ wall, opening })
     })
     svg.append(hit)
+    if (this.selected?.opening === opening) {
+      this.dimLabel(svg, mx + nx * 0.4, my + ny * 0.4, this.metros(opening.width))
+      const handle = this.root.createElementNS(SVG_NS, 'circle')
+      handle.setAttribute('cx', String(b.x))
+      handle.setAttribute('cy', String(b.y))
+      handle.setAttribute('r', '0.14')
+      handle.classList.add('opening-resize-handle')
+      const title = this.root.createElementNS(SVG_NS, 'title')
+      title.textContent = 'Arrastra para cambiar el ancho'
+      handle.append(title)
+      svg.append(handle)
+    }
   }
 
   private onWallClick(wall: Wall, svg: SVGElement, event: MouseEvent): void {
     const point = this.svgPoint(svg as SVGSVGElement, event)
     const along = wall.segment().projectDistance(point)
     const index = this.plan!.walls.indexOf(wall)
-    addWizardOpening(this.plan!, index, this.openingKind, along)
-    this.renderPlanSvg()
+    const opening = addWizardOpening(this.plan!, index, this.openingKind, along)
+    this.root.querySelector('#opening-error')!.textContent = opening ? '' : 'No cabe aquí. Prueba en un tramo libre de la pared.'
+    if (opening) {
+      wall.removeOpening(opening)
+      this.stack.execute(new AddOpeningCommand(this.project!, wall, opening))
+      this.selectOpening({ wall, opening })
+    }
   }
 
   private svgPoint(svg: SVGSVGElement, event: MouseEvent): Point2D {
-    const rect = svg.getBoundingClientRect()
-    const viewBox = svg.viewBox.baseVal
-    return new Point2D(
-      viewBox.x + ((event.clientX - rect.left) / rect.width) * viewBox.width,
-      viewBox.y + ((event.clientY - rect.top) / rect.height) * viewBox.height,
-    )
+    const point = svg.createSVGPoint()
+    point.x = event.clientX
+    point.y = event.clientY
+    const local = point.matrixTransform(svg.getScreenCTM()!.inverse())
+    return new Point2D(local.x, local.y)
+  }
+
+  private selectOpening(selection: { wall: Wall; opening: Opening } | null): void {
+    this.widthControl?.dispose()
+    this.widthControl = null
+    this.selected = selection
+    const editor = this.root.querySelector<HTMLElement>('#wizard-opening-editor')!
+    editor.replaceChildren()
+    editor.hidden = !selection
+    if (selection) {
+      const { wall, opening } = selection
+      const name = this.root.createElement('strong')
+      name.textContent = opening.kind === 'door' ? 'Puerta seleccionada' : 'Ventana seleccionada'
+      this.widthControl = new OpeningWidthControl(this.root, this.project!, wall, opening, this.stack)
+      const remove = this.root.createElement('button')
+      remove.className = 'link-btn'
+      remove.textContent = 'Eliminar apertura'
+      remove.addEventListener('click', () => {
+        this.selectOpening(null)
+        this.stack.execute(new RemoveOpeningCommand(this.project!, wall, opening))
+      })
+      editor.append(name, this.widthControl.element, remove)
+    }
+    if (this.plan) this.renderPlanSvg()
+  }
+
+  private bindResizeHandle(): void {
+    const container = this.root.querySelector<HTMLElement>('#wizard-plan')!
+    container.addEventListener('pointerdown', event => {
+      if (!(event.target as Element).closest('.opening-resize-handle')) return
+      event.preventDefault()
+      this.resizePointer = event.pointerId
+      container.setPointerCapture(event.pointerId)
+    })
+    container.addEventListener('pointermove', event => {
+      if (this.resizePointer !== event.pointerId || !this.selected) return
+      const svg = container.querySelector('svg')!
+      const point = this.svgPoint(svg, event)
+      const { wall, opening } = this.selected
+      this.widthControl?.preview(wall.segment().projectDistance(point) - opening.offset)
+    })
+    container.addEventListener('pointerup', event => {
+      if (this.resizePointer !== event.pointerId) return
+      this.resizePointer = null
+      this.widthControl?.commit()
+      container.releasePointerCapture(event.pointerId)
+    })
+    container.addEventListener('pointercancel', () => {
+      this.resizePointer = null
+      this.widthControl?.cancel()
+    })
   }
 }

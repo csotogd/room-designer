@@ -70,6 +70,7 @@ describe('ChatPanel judge-agent handoff', () => {
       'Rotación correcta Sin evaluar', 'Completitud Sin evaluar',
     ])
   })
+
   test('separa el pensamiento del juez y descarta progreso de fases o rondas anteriores', async () => {
     await submit()
     events().onReply(reply())
@@ -312,6 +313,21 @@ describe('ChatPanel judge-agent handoff', () => {
   })
 })
 
+test('shows automatic parallel work before the reply and restores saved zones on stop', async () => {
+  const showZones = vi.fn()
+  Object.assign(host, { showZones })
+  await submit()
+  const zones = [{ id: 'study', name: 'Estudio', x: 0, z: 0, w: 2, d: 4 }]
+  events().onProgress?.({ requestId: 'c1', runId: 'parallel', state: { ...state(), zones,
+    zoneResults: { study: { status: 'furnishing', reply: 'Amueblando…' } } } })
+  expect(showZones).toHaveBeenLastCalledWith(zones)
+  expect(text()).toContain('en paralelo')
+  expect(document.querySelector('#chat-zones button')).toBeNull()
+  events().onStopped?.('parallel', 'Detenido por ti.')
+  expect(showZones).toHaveBeenLastCalledWith([])
+  expect(document.querySelector<HTMLElement>('#chat-zones')!.hidden).toBe(true)
+})
+
 test('shows rotation and completeness grades and marks older ungraded dimensions', () => {
   events().onState({ ...state(), verdict: { ...score(), rotation: 4, completeness: 8 } })
   expect(document.querySelector('#chat-scores')!.textContent).toContain('Rotación correcta 4/10')
@@ -336,4 +352,16 @@ test('restores the committed scene before applying confirmed actions over a prev
   })
   events().onReply(reply())
   expect(host.reconcile).toHaveBeenCalledWith(sceneFromState(state()))
+})
+
+
+test('al detener un avance restaura la nota de la habitación guardada', async () => {
+  events().onState({ ...state(), verdict: score(4), verdicts: [score(4)] })
+  await submit()
+  events().onProgress!({ requestId: 'c1', runId: 'run1', state: state('preview'),
+    evaluation: { runId: 'run1', revision: 'preview' } })
+  events().onPreviewJudgement!({ runId: 'run1', revision: 'preview', verdict: { ...score(7), preview: true, step: 1 } })
+  expect(document.querySelector('.score-mean')!.textContent).toContain('7/10')
+  events().onStopped!('run1', 'Detenido')
+  expect(document.querySelector('.score-mean')!.textContent).toContain('4/10')
 })

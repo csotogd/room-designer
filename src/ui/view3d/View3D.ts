@@ -1,3 +1,5 @@
+import type { DesignerZone } from '../../app/designer/actions'
+import { buildZoneOverlay, disposeZoneOverlay } from './ZoneOverlay3D'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Point2D } from '../../core/geometry/Point2D'
@@ -83,6 +85,7 @@ export class View3D {
   private readonly sun: THREE.DirectionalLight
   private readonly hemisphere: THREE.HemisphereLight
   private readonly raycaster = new THREE.Raycaster()
+  private zoneGroup = new THREE.Group()
   private roomGroup = new THREE.Group()
   private ghostGroup = new THREE.Group()
   private readonly pending = new Set<SceneOp>(['full'])
@@ -168,7 +171,7 @@ export class View3D {
     this.selectionRing.visible = false
     this.scene.add(this.selectionRing)
 
-    this.scene.add(this.roomGroup, this.ghostGroup)
+    this.scene.add(this.roomGroup, this.ghostGroup, this.zoneGroup)
     this.subscribe()
     this.frameRoom()
     this.bindPointer()
@@ -178,12 +181,20 @@ export class View3D {
   // ── API pública ──────────────────────────────────────────────────────────
 
   setProject(project: Project): void {
+    this.setZones([])
     this.unsubscribe?.()
     this.project = project
     this.subscribe()
     this.select(null)
     this.pending.add('full')
     this.frameRoom()
+  }
+
+  setZones(zones: readonly DesignerZone[]): void {
+    this.scene.remove(this.zoneGroup)
+    disposeZoneOverlay(this.zoneGroup)
+    this.zoneGroup = buildZoneOverlay(zones)
+    this.scene.add(this.zoneGroup)
   }
 
   setPlacement(placement: Placement | null): void {
@@ -238,6 +249,7 @@ export class View3D {
           this.pending.add('lights')
           break
         case 'opening-moved':
+        case 'opening-resized':
           this.pending.add('walls')
           break
         case 'time-changed':
@@ -265,8 +277,11 @@ export class View3D {
     this.flushIfDirty()
     await waitForModels(this.project.furniture.map((furniture) => furniture.item))
     this.flushIfDirty()
-    this.renderer.render(this.scene, this.camera)
-    return this.renderer.domElement.toDataURL('image/png')
+    this.zoneGroup.visible = false
+    try {
+      this.renderer.render(this.scene, this.camera)
+      return this.renderer.domElement.toDataURL('image/png')
+    } finally { this.zoneGroup.visible = true }
   }
 
   /**

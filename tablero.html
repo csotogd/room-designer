@@ -191,20 +191,20 @@
     {
       "id": "RD-001",
       "title": "Crear el tablero de seguimiento",
-      "description": "HTML autónomo con tareas pendientes, en progreso y hechas. Crear y editar tareas, conservar los cambios y descargar una copia portátil. Validar con escenarios Gherkin y pruebas.",
+      "description": "HTML autónomo con tareas pendientes, en progreso y hechas. Crear y editar tareas, conservar los cambios y descargar una copia portátil. Validar con escenarios Gherkin y pruebas. Cierre 02-10-2026 (Claude): tablero operativo y validado con task-tracker.feature y sus pruebas de aceptación y UI, en verde dentro de la suite global (340 Python, 328 frontend/integración).",
       "owner": "Codex",
-      "status": "progress",
+      "status": "done",
       "priority": "high",
-      "updatedAt": "2026-09-12T16:17:00.000Z"
+      "updatedAt": "2026-10-02T22:00:42Z"
     },
     {
       "id": "RD-002",
       "title": "Registrar la disciplina del tablero para los agentes",
-      "description": "Añadir en AGENTS.md y CLAUDE.md que cada trabajo debe registrarse en tablero.html antes de comenzar y actualizarse durante su ejecución y al terminar.",
+      "description": "Añadir en AGENTS.md y CLAUDE.md que cada trabajo debe registrarse en tablero.html antes de comenzar y actualizarse durante su ejecución y al terminar. Cierre 02-10-2026 (Claude): AGENTS.md define el procedimiento completo en «Seguimiento obligatorio en el tablero» y CLAUDE.md remite a él; verificado en ambos archivos.",
       "owner": "Codex",
-      "status": "progress",
+      "status": "done",
       "priority": "high",
-      "updatedAt": "2026-09-12T16:17:00.000Z"
+      "updatedAt": "2026-10-02T22:00:42Z"
     },
     {
       "title": "Importar una habitación editable desde foto o vídeo, con muebles existentes",
@@ -290,6 +290,15 @@
       "scopeUpdate": "Aclaración del usuario: conservar TypeScript para la interfaz y Python para el backend. Implementar conversación libre como servicio; Python decide entre respuesta/aclaración y ejecución/evaluación. Hallazgo: todas las respuestas actuales activan evaluación visual. Migración de lenguaje descartada. Entrega cloud con estado compartido sigue pendiente de implementación y validación específica."
     },
     {
+      "id": "RD-012",
+      "title": "Iniciar el servidor local del editor",
+      "description": "Completado: servidor de desarrollo local iniciado y disponible en http://localhost:5173/. Verificación HTTP correcta: 200.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "low",
+      "updatedAt": "2026-09-15T23:55:20Z"
+    },
+    {
       "id": "RD-013",
       "title": "Desplegar el chat privado en Cloud Run con persistencia cloud",
       "description": "Autorizado: desplegar chat privado con estado compartido, GCS y Gemini. Implementados snapshots GCS con puntero Firestore condicional, configuración de contenedores Python, rutas same-origin y entrega por digest. Validación local: 251 tests Python, 285 frontend/integración, typecheck, lint, build y 7 pruebas de infraestructura simulada correctos; falta despliegue y prueba cloud real. Secreto dev room-designer-dev-gemini-api-key v1 creado y autenticación comprobada. La primera clave fue revocada tras aparecer en la salida de Google; su sustituta se transfirió sin imprimirla. Bloqueo real: generateContent con gemini-3.5-flash devuelve 429 RESOURCE_EXHAUSTED por saldo prepago agotado; no se ha recargado saldo. Ampliación autorizada y completada: claves independientes de Gemini guardadas en stage y prod, versión 1. Verificadas las tres versiones accesibles, valores distintos, restricciones exclusivas a Gemini y autenticación HTTP 200 al listar modelos. No se ha generado contenido en stage/prod ni recargado saldo. Catálogo cloud todavía vacío: carga completa intentada sin progreso y cancelada. Chat sigue desactivado y Airflow apagado en todos los entornos. No dar por desplegado; detalle y pendientes en docs/CHAT-CLOUD.md. Actualización 2026-09-16 10:01 UTC: recarga puntual de 5,00 EUR de Gemini autorizada y confirmada por Google, sin recarga automática. Condiciones aceptadas con autorización y proyecto dev incorporado al panel de AI Studio. El bloqueo anterior de prepago queda pendiente de revalidación mediante generación real; chat aún no desplegado.",
@@ -306,16 +315,16 @@
       "owner": "Codex",
       "status": "done",
       "priority": "high",
-      "updatedAt": "2026-09-16T10:09:20.960682+00:00"
+      "updatedAt": "2026-09-16T10:09:20.959936+00:00"
     },
     {
-      "id": "RD-017",
-      "title": "Retirar el control de hora del día",
-      "description": "Retirados el deslizador de hora del día, el reloj, sus eventos y estilos sin cambiar la iluminación guardada del proyecto. Escenario de aceptación y prueba unitaria observados en rojo y después en verde; comprobado el inicio y cambio de habitación sin el control. Validada la revisión aislada para publicar: 263 pruebas Python y 204 frontend/integración, typecheck, lint backend y build correctos. Una espera de integración falló inicialmente y la repetición completa pasó. Los cambios locales ajenos se conservan fuera del commit; su suite presenta un fallo previo en dobles de View3D para zonificación.",
+      "id": "RD-015",
+      "title": "Zonificar la habitación antes de amueblar por áreas",
+      "description": "Crear una fase de agente para proponer zonas funcionales según la conversación, representarlas gráficamente en el plano y amueblarlas secuencialmente con límites independientes. Conservar el estado, evitar invasiones entre zonas y validar mediante Gherkin, TDD y puertas de calidad. Trabajo iniciado; implementación y validación pendientes.\nAclaración del usuario: las zonas deben dibujarse con líneas discontinuas y nombres sobre la habitación 3D. Amueblado obligatorio, automático y paralelo por agentes independientes; eliminar los botones de inicio manual. Se adapta el alcance, los escenarios y las pruebas antes de implementar.\nImplementado: límites discontinuos legibles y nombres sobre el suelo 3D, amueblado automático obligatorio y paralelo por zona, progreso antes de terminar, guardas geométricas, cancelación y restauración del estado. Eliminados los botones de amueblado. Verificado visualmente en la app. Entrega aislada en codex/zonas-3d-paralelas para conservar los cambios concurrentes. Validación: 284 pruebas Python y 207 frontend/integración, typecheck, Ruff, build y cobertura correctos (96,49 % líneas). Una espera de integración agotada durante el arranque pasó al repetir sin modificar pruebas. Pendiente: terminar Stryker, commit y push solicitados.\nResultado final: zonificación y amueblado automático paralelo completados; límites y nombres comprobados sobre la escena 3D. TDD y refactor completados. Puertas de la entrega aislada en verde: 284 pruebas Python, 207 frontend/integración, typecheck, Ruff, build, cobertura de líneas 96,49 % y mutación 81,14 % (umbral 75 %, 1.861 mutantes). Proveedores simulados, sin llamadas de pago. Alcance: habitación y zonas rectangulares; persistencia de las zonas en el servicio. Entrega en la rama codex/zonas-3d-paralelas; cambios concurrentes conservados fuera de esta entrega.",
       "owner": "Codex",
       "status": "done",
-      "priority": "medium",
-      "updatedAt": "2026-09-16T10:32:03.445Z"
+      "priority": "high",
+      "updatedAt": "2026-09-16T10:44:45.117032+00:00"
     },
     {
       "id": "RD-016",
@@ -325,6 +334,15 @@
       "status": "done",
       "priority": "high",
       "updatedAt": "2026-09-16T10:38:56.609502Z"
+    },
+    {
+      "id": "RD-017",
+      "title": "Retirar el control de hora del día",
+      "description": "Retirados el deslizador de hora del día, el reloj, sus eventos y estilos sin cambiar la iluminación guardada del proyecto. Escenario de aceptación y prueba unitaria observados en rojo y después en verde; comprobado el inicio y cambio de habitación sin el control. Validada la revisión aislada para publicar: 263 pruebas Python y 204 frontend/integración, typecheck, lint backend y build correctos. Una espera de integración falló inicialmente y la repetición completa pasó. Los cambios locales ajenos se conservan fuera del commit; su suite presenta un fallo previo en dobles de View3D para zonificación.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "medium",
+      "updatedAt": "2026-09-16T10:32:03.445Z"
     },
     {
       "id": "RD-018",
@@ -343,10 +361,46 @@
       "status": "done",
       "priority": "high",
       "updatedAt": "2026-09-16T12:11:42.752467Z"
+    },
+    {
+      "id": "RD-020",
+      "title": "Reiniciar la habitación al recargar en local",
+      "description": "Al recargar el editor local comienza una habitación nueva sin recuperar la escena, conversación ni notas del ensayo anterior; conservar la conducta fuera del modo local. Cierre 02-10-2026 (Claude): implementado según local-fresh-room.feature — una sesión de página nueva empieza vacía y la reconexión de la misma página conserva su trabajo, solo en modo local. Aceptación backend y suite global en verde (340 Python, 328 frontend/integración, typecheck y Ruff). Nota operativa: el backend local en ejecución (8790) arrancó antes de este cambio; reiniciar npm run designer:local para observar la conducta en vivo.",
+      "owner": "Codex",
+      "priority": "high",
+      "status": "done",
+      "updatedAt": "2026-10-02T22:00:42Z"
+    },
+    {
+      "id": "RD-021",
+      "title": "Mostrar la evolución real de la evaluación",
+      "description": "El usuario confirma que el juez debe evaluar durante el amueblado y guiar las siguientes decisiones. Implementando capturas intermedias vinculadas a la escena visible, seis notas reales, feedback devuelto al agente antes de continuar y evolución cronológica en el panel. Cierre 02-10-2026 (Claude): intermediate-evaluation.feature implementada — el agente recibe las seis notas y correcciones antes de su siguiente decisión y puede mover o girar muebles antes de cerrar la propuesta inicial. Verificado en el navegador el panel con media (6,833/10 del ensayo real), evolución cronológica y desplegable de evaluaciones con los seis criterios y «Sin evaluar» en registros antiguos. Suite global en verde.",
+      "owner": "Codex",
+      "priority": "high",
+      "status": "done",
+      "updatedAt": "2026-10-02T22:00:42Z"
+    },
+    {
+      "id": "RD-022",
+      "title": "Respetar la lectura del pensamiento al llegar mensajes",
+      "description": "Si el usuario lee mensajes anteriores, las novedades no desplazan su posición; seguir el final solo cuando ya está leyendo allí. Cierre 02-10-2026 (Claude): conversation-reading.feature implementada con ConversationScroll — las novedades conservan la posición de lectura y volver al final reanuda el seguimiento. Pruebas de aceptación y unitarias en verde dentro de la suite global.",
+      "owner": "Codex",
+      "priority": "high",
+      "status": "done",
+      "updatedAt": "2026-10-02T22:00:42Z"
+    },
+    {
+      "id": "RD-023",
+      "title": "Investigar oportunidades de ML en startups de IA europeas",
+      "description": "Investigar empresas con sede o raíces suizas, contrastar productos, actividad reciente y adquisiciones con fuentes públicas y preparar un panorama amplio con selección razonada. Investigación solicitada por el usuario; sin cambios de comportamiento de la aplicación. Aclaración del usuario: orientar la investigación a oportunidades laborales, verificar páginas oficiales de empleo y distinguir puestos publicados de candidaturas espontáneas. Investigación contrastada el 29-09-2026 y preparada para entrega: selección laboral en ML engineering, ML research/science, applied science y data science; distinguir vacantes visibles, anuncios indexados pendientes de reconfirmar y empresas para seguimiento. Fuentes principales: páginas oficiales y portales de contratación enlazados. DeepJudge, Ethon, mimic, ANYbotics y Gravis tienen puestos pertinentes visibles; otras empresas se clasifican según evidencia. Lakera identificada como adquirida por Check Point. No se enviaron candidaturas. JSON del tablero validado; typecheck y Ruff correctos, 340 pruebas Python correctas. Puerta global pendiente por fallos ajenos al cambio de datos: frontend/integración con 2 ficheros fallidos, 1 prueba fallida y 2 excepciones setZones. Se conserva progress por esta puerta, sin modificar código ni pruebas ajenas a la investigación. Ampliación solicitada el 30-09-2026: buscar empleos de ML engineering, research/science, applied science y data science en Dublín, Málaga, Roma, resto de Italia y Londres; contrastar ubicación y distinguir vacantes de seguimiento. Ampliación contrastada el 30-09-2026: selección por Dublín, Málaga/Marbella, Roma, resto de Italia y Londres. Vacantes pertinentes verificadas en páginas oficiales de Fin, RavenPack, Nieve Consulting, Translated, Babelscape, Domyn, smartFAB, DeepTree, Axelera AI, PhysicsX, Goodfire, Wayve, ElevenLabs y Latent Labs; Synthesia etiqueta puestos de investigación como Europa y requiere confirmar ubicación. Empresas sin vacante pertinente comprobada se presentan solo para seguimiento. Se distingue startup, scaleup, consultora y empresa adquirida; modalidades, experiencia y salarios solo cuando aparecen publicados. Sin candidaturas ni mensajes externos. JSON validado con identificadores únicos. La investigación está terminada; se mantiene progress exclusivamente por la puerta global preexistente descrita arriba, sin cambios de producción ni repetición de pruebas no afectadas. Nueva ampliación: investigar oportunidades de ML e investigación en Valencia, Granada, Sevilla y otras ciudades españolas, verificando fuentes oficiales y ubicación. Ampliación española completada el 30-09-2026: revisadas páginas oficiales de Maisa, Quibim, Sciling, Voicemod, Nucleoo, SIDN, Quantia, IDENER.AI, Rovimática, Emergya, Aily Labs, Clarity AI y Multiverse Computing. Vacantes concretas distinguidas de bolsas de talento y anuncios indexados no reconfirmados. Verificados requisitos y modalidad de Nucleoo, IDENER, Rovimática, Emergya, Maisa, Aily y Clarity; señalada contradicción remoto/presencial en Maisa, ausencia de ML actual en Quibim y ubicación Madrid de puestos pertinentes de Quantia. Selección orientada a Valencia, Granada y Sevilla con alternativas en Madrid, Barcelona, San Sebastián y remoto. Sin envío de candidaturas; JSON del tablero validado. Se conserva progress por la puerta global preexistente ya documentada. Nueva ampliación solicitada: buscar startups con puestos ML/research/data science realmente remotos desde cualquier lugar de España, distinguiendo elegibilidad territorial y asistencia presencial. Ampliación adicional: investigar startups de IA en Australia con oportunidades ML/research/data science y evidencia de reubicación o visado cuando exista. Ampliaciones remoto España y Australia completadas el 30-09-2026. España: ofertas vigentes verificadas en Finom (Senior MLE, Spain Remote), RealAdvisor (Data Scientist, fully remote Spain, freelance), ElevenLabs (desde cualquier lugar de España con viajes a clientes), Clarity AI y RavenPack; Synthesia mantiene oferta Research Video Europe Remote con contratación española pendiente de confirmar. Qdrant y Hopper descartados por anuncios cerrados; PostHog Research no presentado como remoto España por modalidad Hybrid UK. Australia: verificadas publicaciones actuales en Pluralis (Research Scientist, doctorado/publicaciones y patrocinio/traslado explícitos; bolsa con research engineers y MLE), Relevance AI (Staff AI Product Engineer, Sídney 3 días oficina y patrocinio de traslado), Heidi (AI Models Engineer mid/senior, Melbourne/Sídney híbrido), Firmus (AI Engineer Inference) y Maincode (AI Research Resident remunerado 3-6 meses). Se sustituyeron enlaces antiguos cerrados por los vigentes en bolsas oficiales. Visados no confirmados señalados como tales; no se trasladan requisitos de anuncios antiguos a ofertas nuevas. Sin candidaturas ni mensajes externos. JSON validado con IDs únicos; solo actualizado el seguimiento, sin cambios de producción ni repetición de pruebas no afectadas. Se conserva progress exclusivamente por la puerta global preexistente documentada. Nueva ampliación solicitada: profundizar en Australia para ML Scientist, Data Scientist y ML Engineer, priorizando startups/scaleups y ofertas vigentes, con evidencia de patrocinio cuando exista. Segunda ampliación australiana completada el 30-09-2026: diez vacantes pertinentes verificadas en seis empresas adicionales: Metacognition (Senior Research Scientist, Senior ML Engineer y Data Scientist; contratos temporales a jornada completa), Neara (Senior ML Engineer y Staff ML Platform; este último con traslado y patrocinio explícitos), Mutinex (Data Scientist), Culture Amp (Staff Applied AI Scientist), Gridsight (Senior/Staff Data Scientist en Optimisation y Power Flows) y Canva (Senior Research Scientist Design Generation; empresa grande separada de startups). Contrastados portales oficiales y anuncios; descartadas ofertas antiguas de Harrison.ai, VALD, Kasada y Associate Data Scientist de Culture Amp al no estar disponibles en sus bolsas actuales. Se distinguen investigación, ingeniería y ciencia de datos especializada, requisitos de doctorado, modalidad territorial y visado confirmado o desconocido. No se enviaron candidaturas. JSON validado con IDs únicos; se mantiene progress solo por la puerta global preexistente documentada, sin cambios de producción. Cierre 02-10-2026 (Claude): la puerta global está recuperada — 340 Python y 328 frontend/integración en verde, sin rastro de las excepciones setZones. La investigación ya estaba terminada; se marca done sin cambios de contenido.",
+      "owner": "Codex",
+      "status": "done",
+      "priority": "medium",
+      "updatedAt": "2026-10-02T22:00:42Z"
     }
   ]
 }
-</script>
+    </script>
 <script id="tracker-core">
 const TRACKER_STORAGE_KEY = 'room-designer-tracker-v1';
 class TaskTracker {
