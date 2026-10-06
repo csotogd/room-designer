@@ -9,6 +9,7 @@ import { CommandStack } from '../../app/commands/CommandStack'
 import { OpeningWidthControl } from './OpeningWidthControl'
 import { RoomDraftView } from './RoomDraftView'
 import { AddOpeningCommand, RemoveOpeningCommand } from '../../app/commands/PlanCommands'
+import { planFromDraft, planParseEndpoint, parsePlanImage } from '../../app/importers/PlanImport'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -67,6 +68,13 @@ export class CreateRoomModal {
         }
       })
     }
+    const importInput = root.querySelector<HTMLInputElement>('#plan-import-input')
+    root.querySelector('#plan-import-button')?.addEventListener('click', () => importInput?.click())
+    importInput?.addEventListener('change', () => {
+      const file = importInput.files?.[0]
+      importInput.value = ''
+      if (file) void this.importPlanFile(file)
+    })
     root.querySelector('#wizard-next')!.addEventListener('click', () => this.toStep2())
     root.querySelector('#wizard-back')!.addEventListener('click', () => {
       this.widthControl?.commit()
@@ -160,6 +168,8 @@ export class CreateRoomModal {
         if (!this.root.querySelector<HTMLElement>('#wizard-step-2')!.hidden) this.renderPlanSvg()
       })
       error.textContent = ''
+      const importStatus = this.root.querySelector<HTMLElement>('#plan-import-status')
+      if (importStatus) importStatus.textContent = ''
       next.disabled = false
       return plan
     } catch (cause) {
@@ -168,6 +178,54 @@ export class CreateRoomModal {
       this.root.querySelector('#room-area')!.textContent = '—'
       return null
     }
+  }
+
+  /** Importa la foto o el dibujo de un plano 2D al borrador editable. */
+  async importPlanFile(file: File): Promise<void> {
+    const status = this.root.querySelector<HTMLElement>('#plan-import-status')!
+    const zone = this.root.querySelector<HTMLElement>('#plan-import-button')
+    if (!/^image\/(png|jpeg)$/.test(file.type)) {
+      status.textContent = 'El plano debe ser una imagen PNG o JPG.'
+      return
+    }
+    status.textContent = 'Leyendo el plano…'
+    zone?.classList.add('scanning')
+    try {
+      const image = await CreateRoomModal.readAsDataUrl(file)
+      const endpoint = planParseEndpoint(
+        (import.meta.env?.VITE_DESIGNER_URL as string | undefined) ?? 'ws://localhost:8790/ws',
+      )
+      const imported = planFromDraft(await parsePlanImage(endpoint, image))
+      this.adoptPlan(imported.plan, imported.height)
+      const parts = ['Plano importado.']
+      if (imported.estimated) parts.push('Medidas estimadas: toca una pared y confirma su longitud real.')
+      if (imported.notes) parts.push(imported.notes)
+      if (imported.skipped.length > 0) parts.push(imported.skipped.join(' '))
+      status.textContent = parts.join(' ')
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : String(error)
+    } finally {
+      zone?.classList.remove('scanning')
+    }
+  }
+
+  /** Deja un plano ya construido (importado) como borrador activo del paso 1. */
+  private adoptPlan(plan: FloorPlan, height: number): void {
+    this.selectOpening(null)
+    this.unsubscribe?.()
+    this.draftView?.cancel()
+    this.stack.clear()
+    this.plan = plan
+    this.root.querySelector<HTMLInputElement>('#dim-h')!.value = String(height)
+    this.project = new Project(plan, height)
+    if (this.draftView) this.draftView.setProject(this.project)
+    else this.draftView = new RoomDraftView(this.root, this.project, this.stack)
+    this.draftView.show()
+    this.unsubscribe = this.project.events.on('changed', () => {
+      if (!this.root.querySelector<HTMLElement>('#wizard-step-2')!.hidden) this.renderPlanSvg()
+    })
+    this.root.querySelector<HTMLElement>('#room-error')!.textContent = ''
+    this.root.querySelector<HTMLButtonElement>('#wizard-next')!.disabled = false
   }
 
   private toStep2(): void {
@@ -420,6 +478,15 @@ export class CreateRoomModal {
       editor.append(name, this.widthControl.element, remove)
     }
     if (this.plan) this.renderPlanSvg()
+  }
+
+  private static readAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo del plano.'))
+      reader.readAsDataURL(file)
+    })
   }
 
   private bindResizeHandle(): void {

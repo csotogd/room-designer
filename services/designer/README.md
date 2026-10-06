@@ -81,8 +81,23 @@ el mismo JSON. Los screenshots del juez se guardan antes de enviar al modelo.
 | Captura de otra revisión/ciclo, duplicada o sin turno pendiente | `{type:'judge.ignored', requestId, reason}` |
 | error | `{type:'error', requestId, error}` |
 
-HTTP: `GET /healthz`, `GET /metrics`, `GET /state`. Otros clientes reciben
-un mensaje `state` tras los cambios. `image` debe ser PNG base64 o data URL.
+HTTP: `GET /healthz`, `GET /metrics`, `GET /state`, `POST /plan/parse`. Otros
+clientes reciben un mensaje `state` tras los cambios. `image` debe ser PNG
+base64 o data URL.
+
+**Importar un plano 2D** — `POST /plan/parse` con `{image}` (data URL PNG o
+JPEG, foto o dibujo) devuelve un borrador editable: `corners` en metros con
+los tramos casi rectos encajados a ejes, `openings` acotadas a su pared (las
+imposibles se descartan y se explican en `dropped`), `height`,
+`scaleEstimated` (true si el dibujo no trae cotas: el lado largo se lleva a
+10 m y el usuario confirma una longitud real en el asistente), `confidence` y
+`notes`. El rol `DESIGNER_PLAN` elige el VLM (Gemini/Claude/GPT, mismo
+esquema que picker y juez); con `fake` responde el parser determinista. Un
+plano ilegible responde 400 y uno que no forma habitación válida, 422 con el
+motivo. El editor lo ofrece en «Crea tu habitación → Sube una foto de tu
+plano»: el borrador cae en el lienzo del paso 1, donde arrastrar paredes,
+fijar longitudes exactas y editar aperturas funcionan igual que en un plano
+dibujado a mano.
 
 **Edición manual compartida:** el editor envía la escena al terminar el arrastre;
 agrupa otras ediciones durante 250 ms. `base` es la escena de partida y `desired`

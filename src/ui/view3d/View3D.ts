@@ -2,6 +2,7 @@ import type { DesignerZone } from '../../app/designer/actions'
 import { buildZoneOverlay, disposeZoneOverlay } from './ZoneOverlay3D'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { Point2D } from '../../core/geometry/Point2D'
 import { Point3D } from '../../core/geometry/Point3D'
 import { Door } from '../../core/model/Door'
@@ -127,7 +128,20 @@ export class View3D {
     // bajo demanda (al cambiar el proyecto), no en cada frame de órbita.
     this.renderer.shadowMap.autoUpdate = false
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+    this.renderer.toneMappingExposure = 1.12
     container.appendChild(this.renderer.domElement)
+
+    // Iluminación por entorno: da reflejos y volumen a los materiales PBR de
+    // los GLB (sin ella se ven planos). Se hornea una sola vez; si el contexto
+    // GL no lo soporta (tests, GPUs antiguas), la escena sigue funcionando.
+    try {
+      const pmrem = new THREE.PMREMGenerator(this.renderer)
+      this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+      this.scene.environmentIntensity = 0.5
+      pmrem.dispose()
+    } catch {
+      /* sin entorno: las luces directas siguen iluminando la escena */
+    }
 
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)

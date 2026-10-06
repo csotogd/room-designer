@@ -19,7 +19,15 @@ from room_designer.adapters.storage import (
     LocalScreenshots,
     read_catalog,
 )
-from room_designer.adapters.vision import AdkJudge, AdkPicker, ConstantJudge, DeterministicPicker, ImageLoader
+from room_designer.adapters.vision import (
+    AdkJudge,
+    AdkPicker,
+    AdkPlanParser,
+    ConstantJudge,
+    DeterministicPicker,
+    DeterministicPlanParser,
+    ImageLoader,
+)
 from room_designer.application.design import DesignSession
 from room_designer.application.observability import configure_logging
 from room_designer.config import ModelConfig
@@ -51,8 +59,9 @@ def room_repository(env, client):
 
 def designer_app(env=None):
     env = dict(os.environ if env is None else env)
-    config, picker_config, judge_config = [
-        ModelConfig.from_env(env, role) for role in ("DESIGNER", "DESIGNER_PICKER", "DESIGNER_JUDGE")
+    config, picker_config, judge_config, plan_config = [
+        ModelConfig.from_env(env, role)
+        for role in ("DESIGNER", "DESIGNER_PICKER", "DESIGNER_JUDGE", "DESIGNER_PLAN")
     ]
     client = httpx.AsyncClient()
     catalog = read_catalog(catalog_path(env))
@@ -64,6 +73,11 @@ def designer_app(env=None):
         )
     )
     judge = ConstantJudge() if judge_config.provider == "fake" else AdkJudge(create_model(judge_config))
+    plan_parser = (
+        DeterministicPlanParser()
+        if plan_config.provider == "fake"
+        else AdkPlanParser(create_model(plan_config))
+    )
     session = DesignSession(
         room_repository(env, client),
         catalog,
@@ -94,6 +108,7 @@ def designer_app(env=None):
         judge_target=float(env.get("DESIGNER_JUDGE_TARGET", "7")),
         fresh_local_sessions=env.get("DESIGNER_LOCAL_FRESH_SESSIONS") == "1",
         rate_limit=RateLimiter(int(env.get("RATE_LIMIT_PER_MINUTE", "120"))),
+        plan_parser=plan_parser,
     )
 
 

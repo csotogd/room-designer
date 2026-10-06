@@ -529,3 +529,34 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
 .evaluation-history > details { max-height: 200px; overflow-y: auto; }
 .evaluation-row { padding: 10px 0; border-top: 1px solid var(--border, #deded8); }
 .evaluation-row p { margin: 6px 0 0; line-height: 1.45; }
+
+/* ── Importar un plano 2D (foto o dibujo) ─────────────────────────────────── */
+
+#plan-import { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+#plan-import .eyebrow { color: var(--ink-soft); }
+#plan-import-button {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 26px 1fr; align-items: center; column-gap: 12px;
+  width: 100%; text-align: left; padding: 14px 16px; cursor: pointer;
+  border: 1.5px dashed var(--line-strong); border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 72%, var(--paper));
+  color: var(--ink-2);
+  transition: border-color 0.25s, background 0.25s, transform 0.25s;
+}
+#plan-import-button:hover { border-color: var(--accent); background: var(--panel); transform: translateY(-1px); }
+#plan-import-button svg { grid-row: span 2; width: 26px; height: 26px; color: var(--accent-deep); }
+#plan-import-button strong { font-size: 13px; color: var(--ink); letter-spacing: -0.2px; }
+#plan-import-button span { font-size: 11px; color: var(--ink-soft); line-height: 1.4; }
+#plan-import-button.scanning { border-style: solid; pointer-events: none; }
+#plan-import-button.scanning::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 30%, color-mix(in srgb, var(--accent) 14%, transparent) 50%, transparent 70%);
+  animation: plan-scan 1.1s linear infinite;
+}
+@keyframes plan-scan { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  #plan-import-button.scanning::after { animation: none; }
+  #plan-import-button:hover { transform: none; }
+}
+#plan-import-status:empty { display: none; }
+#plan-import-status { line-height: 1.5; }

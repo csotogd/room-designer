@@ -236,6 +236,16 @@
               </label>
             </div>
             </details>
+            <div id="plan-import">
+              <span class="eyebrow">O empieza desde tu plano</span>
+              <button id="plan-import-button" type="button" aria-describedby="plan-import-status">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.2 9.5 H14 V20.8 M14 9.5 V3.2 M9 14.5 H20.8" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="17.4" cy="6.4" r="1.1" fill="currentColor"/></svg>
+                <strong>Sube una foto de tu plano</strong>
+                <span>PNG o JPG · paredes, puertas y ventanas, listas para editar</span>
+              </button>
+              <input id="plan-import-input" type="file" accept="image/png,image/jpeg" hidden>
+              <p id="plan-import-status" class="wizard-message" role="status"></p>
+            </div>
               </aside>
             </div>
             <p id="room-error" class="wizard-message" role="status"></p>

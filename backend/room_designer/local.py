@@ -9,7 +9,7 @@ from room_designer.adapters.secret_manager import read_secret
 from room_designer.bootstrap import designer_app, setup
 
 DEV_SECRET = "projects/room-designer-508414/secrets/room-designer-dev-gemini-api-key/versions/1"
-ROLES = ("DESIGNER", "DESIGNER_PICKER", "DESIGNER_JUDGE")
+ROLES = ("DESIGNER", "DESIGNER_PICKER", "DESIGNER_JUDGE", "DESIGNER_PLAN")
 
 
 def local_configuration(env: dict[str, str]) -> dict[str, str]:

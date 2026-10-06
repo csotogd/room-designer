@@ -26,3 +26,7 @@ class ScreenshotStore(Protocol):
 
 class AgentRuntime(Protocol):
     async def run(self, brief: str, state: Json, tools: list) -> str: ...
+
+
+class PlanParser(Protocol):
+    async def parse(self, image: bytes) -> Json: ...

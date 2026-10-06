@@ -13,12 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from room_designer.adapters.reliability import RateLimiter
-from room_designer.adapters.vision import decode_png
+from room_designer.adapters.vision import decode_plan_image, decode_png
 from room_designer.application.observability import (
     observation_context,
     request_id_from_headers,
     trace_id_from_headers,
 )
+from room_designer.application.plan_import import import_plan
 from room_designer.application.workflow import DesignWorkflow
 
 log = logging.getLogger(__name__)
@@ -224,6 +225,7 @@ def create_designer_app(
     judge_target: float = 7.0,
     fresh_local_sessions: bool = False,
     rate_limit: RateLimiter | None = None,
+    plan_parser=None,
 ):
     app, metrics = base_app(lifespan, rate_limit)
     clients: set[WebSocket] = set()
@@ -257,6 +259,29 @@ def create_designer_app(
         if not authorized(credential, token):
             return JSONResponse({"error": "token inválido"}, status_code=401)
         return await session.state()
+
+    @app.post("/plan/parse")
+    async def plan_parse(request: Request):
+        credential = request.query_params.get("token") or request.headers.get(
+            "authorization", ""
+        ).removeprefix("Bearer ")
+        if not authorized(credential, token):
+            return JSONResponse({"error": "token inválido"}, status_code=401)
+        if plan_parser is None:
+            return JSONResponse({"error": "Importación de planos no configurada"}, status_code=503)
+        try:
+            body = await request.json()
+            image = body.get("image") if isinstance(body, dict) else None
+            if not isinstance(image, str) or not image:
+                raise ValueError("Falta la imagen del plano")
+            data = decode_plan_image(image)
+        except ValueError as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
+        try:
+            return await import_plan(plan_parser, data)
+        except ValueError as error:
+            # El parser vio la imagen pero no salió una habitación válida.
+            return JSONResponse({"error": str(error)}, status_code=422)
 
     @app.websocket("/ws")
     async def websocket(socket: WebSocket):
